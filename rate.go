@@ -2,13 +2,10 @@ package main
 
 import (
 	"bytes"
-	"encoding/gob"
 	"fmt"
-	"log"
 	"math"
 	"math/big"
 	"math/rand"
-	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -24,45 +21,30 @@ type pair struct {
 
 type pairList []pair
 
-const (
-	ratingPath     = "ratings"
-	userRatingPath = "ratings/users"
-
-	numRespecsToSave = 5
-)
+const ()
 
 var (
-	userRatings     map[string]int
 	userLastMessage map[string]time.Time
 	userLastRespec  map[string]time.Time
 	lastUserPost    map[string]string
 
-	respecsToSave int
-	totalRespec   int
+	totalRespec int
 
 	letters map[rune]string
 )
 
 func InitRatings() {
-	userRatings = make(map[string]int)
+	userRatings := make(map[string]int)
 	userLastMessage = make(map[string]time.Time)
 	userLastRespec = make(map[string]time.Time)
 	lastUserPost = make(map[string]string)
 
 	rand.Seed(time.Now().Unix())
 
-	// If rating path does not exist create it
-	if _, err := os.Stat(ratingPath); os.IsNotExist(err) {
-		err = os.Mkdir(ratingPath, 0755)
-		if err != nil {
-			log.Printf("Error creating directory: %s\n", err)
-		}
-		fmt.Printf("Creating ratings directory %s\n", ratingPath)
-	}
+	dbLoadRespec(&userRatings)
+	fmt.Println("loaded", len(userRatings), "ratings")
 
-	loadRatings(&userRatings, userRatingPath)
-
-	totalRespec = getTotalRespec()
+	totalRespec = dbGetTotalRespec()
 
 	letters = make(map[rune]string)
 
@@ -88,59 +70,26 @@ func InitRatings() {
 	}
 }
 
-// Load the given rating map from the path
-func loadRatings(list *map[string]int, path string) {
-	ratingsFile, err := os.Open(path)
-	defer ratingsFile.Close()
-	if os.IsNotExist(err) {
-		fmt.Printf("No file %s\n", path)
-	} else {
-		decoder := gob.NewDecoder(ratingsFile)
-		err = decoder.Decode(list)
-		if err != nil {
-			log.Printf("Error loading file %s: %s\n", path, err)
-		}
-		fmt.Printf("loaded %d ratings from %s\n", len(*list), path)
-	}
-}
-
-// save all ratings maps
-func SaveRatings() {
-	saveMap(userRatings, userRatingPath)
-}
-
-func getTotalRespec() (total int) {
-	var users = getRatingsLists()
-	for _, v := range users {
-		total += v.Value
-	}
-	return
-}
-
 func respec(user *discordgo.User, rating int) {
-	userRatings[user.String()] += rating
 	// abs(userRating) / abs(totalRespec)
-	if totalRespec != 0 && userRatings[user.String()] != 0 {
-		var temp = math.Abs(float64(userRatings[user.String()])) / math.Abs(float64(totalRespec))
+	userRespec := dbGetUserRespec(user)
+	newRespec := rating
+	if totalRespec != 0 && userRespec != 0 {
+		var temp = math.Abs(float64(userRespec)) / math.Abs(float64(totalRespec))
 		if temp > 0.1 {
 			temp = 0.1
 		} else if temp < 0.01 {
 			temp = 0.01
 		}
 		if rand.Float64() < temp {
-			rating = -rating * 2
-			userRatings[user.String()] += rating
+			newRespec = -rating
 		}
 	}
 
-	totalRespec += rating
-	fmt.Printf("%v %+d respec\n", user, rating)
+	totalRespec += newRespec
+	fmt.Printf("%v %+d respec\n", user, newRespec)
 
-	if respecsToSave >= numRespecsToSave {
-		//SaveRatings()
-		respecsToSave = 0
-	}
-	respecsToSave++
+	dbGainRespec(user, newRespec)
 }
 
 // give respec by reacting
@@ -148,12 +97,15 @@ func RespecReactionAdd(session *discordgo.Session, reaction *discordgo.MessageRe
 	user, _ := session.User(reaction.UserID)
 	message, _ := session.ChannelMessage(reaction.ChannelID, reaction.MessageID)
 	author := message.Author
+	timeStamp, _ := message.Timestamp.Parse()
 	fmt.Printf("%v got a reaction from %v\n", author, user)
 	if user == author {
 		respec(author, -5)
 	} else {
 		respec(author, 2)
 	}
+
+	dbReactionAdd(author, reaction, timeStamp)
 }
 
 // no fuckin gaming the system
@@ -161,10 +113,12 @@ func RespecReactionRemove(session *discordgo.Session, reaction *discordgo.Messag
 	user, _ := session.User(reaction.UserID)
 	message, _ := session.ChannelMessage(reaction.ChannelID, reaction.MessageID)
 	author := message.Author
+	timeStamp, _ := message.Timestamp.Parse()
 	fmt.Printf("%v lost a reaction\n", author)
 	respec(author, -2)
 	fmt.Printf("%v removed a reaction\n", user)
 	respec(user, -1)
+	dbReactionRemove(author, reaction, timeStamp)
 }
 
 // evaluate messages
@@ -192,6 +146,8 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 
 	fmt.Printf("%v: %v\n", author, message.Content)
 	respec(author, totalRespec)
+
+	dbNewMessage(author, incomingMessage, totalRespec, newTime)
 }
 
 // fuck you double posters
@@ -314,68 +270,39 @@ func respecingSelf(author *discordgo.User, users []*discordgo.User) bool {
 }
 
 // gif someone respec
-func GiveRespec(incomingMessage *discordgo.MessageCreate) {
+func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	mentions := incomingMessage.Message.Mentions
 	author := incomingMessage.Message.Author
 	timeStamp, _ := incomingMessage.Timestamp.Parse()
+	numRespec := 4
+	if !positive {
+		numRespec = -numRespec
+	}
 
 	// lose respec if you use it wrong
 	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
 		fmt.Println(author, "Used respec wrong")
 		respec(author, -5)
+		dbGiveRespec(author, author, -5, timeStamp)
 		respecGiven(author, timeStamp)
 		return
 	}
 
 	for _, v := range mentions {
-		respec(v, 4)
-		fmt.Println("Repec given to ", v)
+		fmt.Println(author, " gave respec to ", v)
+		respec(v, numRespec)
+		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
 
 	respecGiven(author, timeStamp)
-}
-
-//fucc someones respec
-func NoRespec(incomingMessage *discordgo.MessageCreate) {
-	mentions := incomingMessage.Message.Mentions
-	author := incomingMessage.Message.Author
-	timeStamp, _ := incomingMessage.Timestamp.Parse()
-
-	// lose respec if you use it wrong
-	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
-		fmt.Println(author, "Used respec wrong")
-		respec(author, -10)
-		respecGiven(author, timeStamp)
-		return
-	}
-
-	for _, v := range mentions {
-		respec(v, -4)
-		fmt.Println("Repec taken from ", v.String())
-	}
-
-	respecGiven(author, timeStamp)
-}
-
-// save the ratings map to given path
-func saveMap(data map[string]int, path string) {
-	ratingFile, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0666)
-	defer ratingFile.Close()
-	if err != nil {
-		log.Printf("failed to open or create file %s: %s\n", path, err)
-	}
-
-	encoder := gob.NewEncoder(ratingFile)
-
-	if err := encoder.Encode(data); err != nil {
-		log.Printf("Failed to save ratings to %s: %s", path, err)
-	}
-	fmt.Println("Saved to " + path)
 }
 
 // get all da users in list
 func getRatingsLists() (users pairList) {
-	for k, v := range userRatings {
+	temp := make(map[string]int)
+	dbLoadRespec(&temp)
+
+	for k, v := range temp {
 		users = append(users, pair{k, v})
 	}
 

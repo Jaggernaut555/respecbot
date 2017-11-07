@@ -104,15 +104,14 @@ func cmdStats(session *discordgo.Session, message *discordgo.MessageCreate, args
 	stats += GetMostRespec()
 	stats += "```"
 	SendReply(session, message.ChannelID, stats)
-	//SaveRatings()
 }
 
 func cmdRespec(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
 	// give a user respec
-	GiveRespec(message)
+	GiveRespec(message, true)
 }
 
 func cmdNoRespec(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
 	// lose a user respec
-	NoRespec(message)
+	GiveRespec(message, false)
 }
