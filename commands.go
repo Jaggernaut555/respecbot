@@ -82,7 +82,11 @@ func cmdVersion(session *discordgo.Session, message *discordgo.MessageCreate, ar
 }
 
 func cmdHere(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
-	channel, _ := session.Channel(message.ChannelID)
+	channel, err := session.Channel(message.ChannelID)
+	if err != nil {
+		panic(err)
+	}
+
 	if Channels[channel.ID] {
 		SendReply(session, channel.ID, "Yeah")
 		return

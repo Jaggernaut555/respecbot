@@ -32,7 +32,7 @@ type Reaction struct {
 }
 
 type Respec struct {
-	ID         uint64    `xorm:"varchar(50) pk autoincr"`
+	ID         uint64    `xorm:"pk autoincr"`
 	GiverID    string    `xorm:"not null"`
 	ReceiverID string    `xorm:"not null"`
 	Time       time.Time `xorm:"not null"`
