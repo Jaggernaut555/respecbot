@@ -39,6 +39,14 @@ type Respec struct {
 	Respec     int       `xorm:"default 0"`
 }
 
+type Mention struct {
+	GiverID    string    `xorm:"pk"`
+	ReceiverID string    `xorm:"pk"`
+	MessageID  string    `xorm:"pk"`
+	Time       time.Time `xorm:"not null"`
+	Respec     int       `xorm:"default 0"`
+}
+
 var engine *xorm.Engine
 
 func InitDB() {
@@ -63,6 +71,7 @@ func createTables(e *xorm.Engine) {
 	e.Sync2(new(Message))
 	e.Sync2(new(Reaction))
 	e.Sync2(new(Respec))
+	e.Sync2(new(Mention))
 }
 
 func dbGetTotalRespec() (total int) {
@@ -175,12 +184,20 @@ func dbReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReacti
 	}
 }
 
+func dbMention(giver *discordgo.User, receiver *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
+	mention := Mention{GiverID: giver.String(), ReceiverID: receiver.String(), MessageID: message.ID, Respec: numRespec, Time: timeStamp}
+	if _, err := engine.Insert(mention); err != nil {
+		panic(err)
+	}
+}
+
 func purgeDB() error {
 	engine.ShowSQL(true)
 	var users []User
 	var messages []Message
 	var reactions []Reaction
 	var respecs []Respec
+	var Mention []Mention
 	if err := engine.Find(&users); err != nil {
 		return err
 	}
@@ -209,6 +226,14 @@ func purgeDB() error {
 		return err
 	}
 	for _, v := range respecs {
+		if _, err := engine.Delete(&v); err != nil {
+			return err
+		}
+	}
+	if err := engine.Find(&Mention); err != nil {
+		return err
+	}
+	for _, v := range Mention {
 		if _, err := engine.Delete(&v); err != nil {
 			return err
 		}

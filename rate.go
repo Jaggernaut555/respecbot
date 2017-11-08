@@ -21,7 +21,9 @@ type pair struct {
 
 type pairList []pair
 
-const ()
+const (
+	mentionValue = 2
+)
 
 var (
 	userLastMessage map[string]time.Time
@@ -129,6 +131,7 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 	// if you spam or barely
 	message := incomingMessage.Message
 	author := message.Author
+	timeStamp, _ := message.Timestamp.Parse()
 	totalRespec := 0
 
 	totalRespec += respecLetters(message.Content)
@@ -136,18 +139,17 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 	totalRespec += respecLength(message.Content)
 
 	var mentions = message.Mentions
-	respecMentions(mentions)
+	respecMentions(author, mentions, message, timeStamp)
 
-	newTime, _ := message.Timestamp.Parse()
-	respecTime(author, newTime)
-	userLastMessage[author.String()] = newTime
+	respecTime(author, timeStamp)
+	userLastMessage[author.String()] = timeStamp
 
 	totalRespec += lastPost(author, message.ChannelID)
 
 	fmt.Printf("%v: %v\n", author, message.Content)
 	respec(author, totalRespec)
 
-	dbNewMessage(author, incomingMessage, totalRespec, newTime)
+	dbNewMessage(author, incomingMessage, totalRespec, timeStamp)
 }
 
 // fuck you double posters
@@ -238,9 +240,10 @@ func respecLength(content string) (respec int) {
 }
 
 // if someone talkin to you you aight
-func respecMentions(users []*discordgo.User) {
+func respecMentions(user *discordgo.User, users []*discordgo.User, message *discordgo.Message, timeStamp time.Time) {
 	for _, v := range users {
-		respec(v, 2)
+		respec(v, mentionValue)
+		dbMention(user, v, message, mentionValue, timeStamp)
 	}
 }
 
