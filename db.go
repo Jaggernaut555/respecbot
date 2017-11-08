@@ -11,12 +11,12 @@ import (
 )
 
 type User struct {
-	ID     string `xorm:"pk"`
+	ID     string `xorm:"varchar(50) pk"`
 	Respec int    `xorm:"default 0"`
 }
 
 type Message struct {
-	ID      string    `xorm:"pk"`
+	ID      string    `xorm:"varchar(50) pk"`
 	Content string    `xorm:"varchar(2000) not null"`
 	UserID  string    `xorm:"not null"`
 	Respec  int       `xorm:"default 0"`
@@ -24,15 +24,15 @@ type Message struct {
 }
 
 type Reaction struct {
-	Content   string    `xorm:"pk"`
-	MessageID string    `xorm:"pk"`
-	UserID    string    `xorm:"pk"`
+	Content   string    `xorm:"varchar(50) pk"`
+	MessageID string    `xorm:"varchar(50) pk"`
+	UserID    string    `xorm:"varchar(50) pk"`
 	Time      time.Time `xorm:"not null"`
 	Removed   time.Time
 }
 
 type Respec struct {
-	ID         uint64    `xorm:"pk autoincr"`
+	ID         uint64    `xorm:"varchar(50) pk autoincr"`
 	GiverID    string    `xorm:"not null"`
 	ReceiverID string    `xorm:"not null"`
 	Time       time.Time `xorm:"not null"`
@@ -40,9 +40,9 @@ type Respec struct {
 }
 
 type Mention struct {
-	GiverID    string    `xorm:"pk"`
-	ReceiverID string    `xorm:"pk"`
-	MessageID  string    `xorm:"pk"`
+	GiverID    string    `xorm:"varchar(50) pk"`
+	ReceiverID string    `xorm:"varchar(50) pk"`
+	MessageID  string    `xorm:"varchar(50) pk"`
 	Time       time.Time `xorm:"not null"`
 	Respec     int       `xorm:"default 0"`
 }
@@ -67,11 +67,21 @@ func InitDB() {
 }
 
 func createTables(e *xorm.Engine) {
-	e.Sync2(new(User))
-	e.Sync2(new(Message))
-	e.Sync2(new(Reaction))
-	e.Sync2(new(Respec))
-	e.Sync2(new(Mention))
+	if err := e.Sync2(new(User)); err != nil {
+		panic(err)
+	}
+	if err := e.Sync2(new(Message)); err != nil {
+		panic(err)
+	}
+	if err := e.Sync2(new(Reaction)); err != nil {
+		panic(err)
+	}
+	if err := e.Sync2(new(Respec)); err != nil {
+		panic(err)
+	}
+	if err := e.Sync2(new(Mention)); err != nil {
+		panic(err)
+	}
 }
 
 func dbGetTotalRespec() (total int) {
