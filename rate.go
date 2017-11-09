@@ -49,9 +49,10 @@ func addRespec(user *discordgo.User, rating int) {
 	userRespec := dbGetUserRespec(user)
 	newRespec := rating
 	if totalRespec != 0 && userRespec != 0 {
-		var temp = math.Abs(float64(userRespec)) / math.Abs(float64(totalRespec))
-		if temp > 0.1 {
-			temp = 0.1
+		temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
+		//var temp = math.Abs(float64(userRespec)) / math.Abs(float64(totalRespec))
+		if temp > 0.33 {
+			temp = 0.33
 		} else if temp < 0.01 {
 			temp = 0.01
 		}
