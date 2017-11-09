@@ -20,7 +20,6 @@ type pair struct {
 type pairList []pair
 
 const (
-	giveRespecValue   = 10
 	correctUsageValue = 2
 	reactionValue     = 2
 	mentionValue      = 3
@@ -158,7 +157,20 @@ func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	mentions := incomingMessage.Message.Mentions
 	author := incomingMessage.Message.Author
 	timeStamp, _ := incomingMessage.Timestamp.Parse()
-	numRespec := giveRespecValue
+	respec := dbGetUserRespec(author)
+	numRespec := 0
+
+	if respec <= 0 {
+		numRespec = 2
+	} else {
+		numRespec = respec / 10
+		if numRespec < 2 {
+			numRespec = 2
+		} else if numRespec > 25 {
+			numRespec = 25
+		}
+	}
+
 	if !positive {
 		numRespec = -numRespec
 	}
@@ -166,8 +178,8 @@ func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	// lose respec if you use it wrong
 	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
 		fmt.Println(author, "Used respec wrong")
-		addRespec(author, -giveRespecValue)
-		dbGiveRespec(author, author, -giveRespecValue, timeStamp)
+		addRespec(author, -numRespec)
+		dbGiveRespec(author, author, -numRespec, timeStamp)
 		mentions = nil
 	} else {
 		addRespec(author, correctUsageValue)
@@ -217,8 +229,8 @@ func GetRespec() (Leaderboard string, negativeUsers []string) {
 		}
 	}
 	w.Flush()
-
 	Leaderboard = fmt.Sprintf("%v", buf.String())
+	sort.Strings(negativeUsers)
 	return
 }
 
