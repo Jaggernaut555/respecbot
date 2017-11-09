@@ -20,10 +20,10 @@ type pair struct {
 type pairList []pair
 
 const (
-	giveRespecValue   = 4
+	giveRespecValue   = 10
 	correctUsageValue = 2
 	reactionValue     = 2
-	mentionValue      = 2
+	mentionValue      = 3
 )
 
 var (

@@ -99,7 +99,10 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 	}
 
 	// rate users on everything else they get
-	if channel, _ := session.Channel(message.ChannelID); Servers[channel.GuildID] == true {
+	channel, err := session.Channel(message.ChannelID)
+	if err != nil {
+		return
+	} else if channel != nil && Servers[channel.GuildID] == true {
 		RespecMessage(message)
 	}
 }

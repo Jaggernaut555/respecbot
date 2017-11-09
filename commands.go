@@ -104,7 +104,7 @@ func cmdNotHere(session *discordgo.Session, message *discordgo.MessageCreate, ar
 }
 
 func cmdStats(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
-	var stats = "Stats:\n```\n"
+	var stats = "Leaderboard:\n```\n"
 	stats += GetMostRespec()
 	stats += "```"
 	SendReply(session, message.ChannelID, stats)

@@ -11,7 +11,7 @@ import (
 )
 
 type User struct {
-	Username string `xorm:"varchar(50) pk"`
+	Username string `xorm:"varchar(50) not null unique"`
 	Respec   int    `xorm:"default 0"`
 	ID       string `xorm:"varchar(50) pk"`
 }
@@ -99,7 +99,7 @@ func dbGetTotalRespec() (total int) {
 }
 
 func dbGetUserRespec(discordUser *discordgo.User) (respec int) {
-	user := &User{ID: discordUser.String()}
+	user := &User{Username: discordUser.String(), ID: discordUser.ID}
 	has, err := engine.Get(user)
 	if err != nil {
 		panic(err)
@@ -128,7 +128,7 @@ func dbGainRespec(discordUser *discordgo.User, respec int) {
 	}
 	if has {
 		user.Respec += respec
-		if _, err = engine.ID(core.PK{user.Username, user.ID}).Cols("Respec").Update(user); err != nil {
+		if _, err = engine.ID(core.PK{user.ID}).Cols("Respec").Update(user); err != nil {
 			panic(err)
 		}
 	} else {

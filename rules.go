@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/big"
 	"strings"
 	"time"
@@ -76,7 +75,7 @@ func lastPost(author *discordgo.User, newMessage *discordgo.Message) (respec int
 		if message.Author.ID == author.ID {
 			respec -= minValue
 		} else {
-			respec += smallValue
+			respec += minValue
 		}
 
 		if message.Content == newMessage.Content {
@@ -87,8 +86,6 @@ func lastPost(author *discordgo.User, newMessage *discordgo.Message) (respec int
 	}
 
 	channelLastMessage[newMessage.ChannelID] = newMessage
-
-	fmt.Println("lastPost", respec)
 	return
 }
 
@@ -138,8 +135,6 @@ func respecLetters(author *discordgo.User, message *discordgo.Message) (respec i
 	} else {
 		respec += minValue
 	}
-
-	fmt.Println("letters", respec)
 	return
 }
 
@@ -154,16 +149,9 @@ func respecTime(author *discordgo.User, message *discordgo.Message) (respec int)
 			respec -= smallValue
 		} else if timeDelta.Hours() > 6 {
 			respec -= int(timeDelta.Hours()) * minValue
-		} else {
-			respec += minValue
 		}
-	} else {
-		respec += minValue
 	}
-
 	userLastMessage[author.String()] = timeStamp
-
-	fmt.Println("time", respec)
 	return
 }
 
@@ -179,10 +167,6 @@ func respecLength(author *discordgo.User, message *discordgo.Message) (respec in
 		respec -= smallValue
 	} else if length > 25 {
 		respec -= bigValue
-	} else {
-		respec += minValue
 	}
-
-	fmt.Println("length", respec)
 	return
 }
