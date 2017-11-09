@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"math/big"
 	"math/rand"
 	"sort"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -22,24 +20,21 @@ type pair struct {
 type pairList []pair
 
 const (
-	mentionValue = 2
+	giveRespecValue   = 4
+	correctUsageValue = 2
+	reactionValue     = 2
+	mentionValue      = 2
 )
 
 var (
-	userLastMessage map[string]time.Time
-	userLastRespec  map[string]time.Time
-	lastUserPost    map[string]string
+	userLastRespec map[string]time.Time
 
 	totalRespec int
-
-	letters map[rune]string
 )
 
 func InitRatings() {
 	userRatings := make(map[string]int)
-	userLastMessage = make(map[string]time.Time)
 	userLastRespec = make(map[string]time.Time)
-	lastUserPost = make(map[string]string)
 
 	rand.Seed(time.Now().Unix())
 
@@ -47,32 +42,9 @@ func InitRatings() {
 	fmt.Println("loaded", len(userRatings), "ratings")
 
 	totalRespec = dbGetTotalRespec()
-
-	letters = make(map[rune]string)
-
-	var vowels = []rune{'a', 'e', 'i', 'o', 'u'}
-	var capVowels = []rune{'A', 'E', 'I', 'O', 'U'}
-	var consonants = []rune{'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'}
-	var capConsonants = []rune{'B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z'}
-
-	for _, v := range vowels {
-		letters[v] = "vowel"
-	}
-
-	for _, v := range consonants {
-		letters[v] = "consonant"
-	}
-
-	for _, v := range capVowels {
-		letters[v] = "capVowel"
-	}
-
-	for _, v := range capConsonants {
-		letters[v] = "capConsonant"
-	}
 }
 
-func respec(user *discordgo.User, rating int) {
+func addRespec(user *discordgo.User, rating int) {
 	// abs(userRating) / abs(totalRespec)
 	userRespec := dbGetUserRespec(user)
 	newRespec := rating
@@ -84,7 +56,7 @@ func respec(user *discordgo.User, rating int) {
 			temp = 0.01
 		}
 		if rand.Float64() < temp {
-			newRespec = -rating
+			newRespec = -newRespec
 		}
 	}
 
@@ -101,10 +73,10 @@ func RespecReactionAdd(session *discordgo.Session, reaction *discordgo.MessageRe
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
 	fmt.Printf("%v got a reaction from %v\n", author, user)
-	if user == author {
-		respec(author, -5)
+	if user.ID == author.ID {
+		addRespec(author, -reactionValue)
 	} else {
-		respec(author, 2)
+		addRespec(author, reactionValue)
 	}
 
 	dbReactionAdd(author, reaction, timeStamp)
@@ -117,138 +89,47 @@ func RespecReactionRemove(session *discordgo.Session, reaction *discordgo.Messag
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
 	fmt.Printf("%v lost a reaction\n", author)
-	respec(author, -2)
+	addRespec(author, -reactionValue)
 	fmt.Printf("%v removed a reaction\n", user)
-	respec(user, -1)
+	addRespec(user, -reactionValue)
 	dbReactionRemove(author, reaction, timeStamp)
 }
 
 // evaluate messages
 func RespecMessage(incomingMessage *discordgo.MessageCreate) {
-	// if a user is mentioned, respec them
-	// if you use more than twice as many consonants as vowels, you lose respec
-	// if you use one word only you lose respec
-	// if you spam or barely
+
 	message := incomingMessage.Message
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
-	totalRespec := 0
-
-	totalRespec += respecLetters(message.Content)
-
-	totalRespec += respecLength(message.Content)
-
-	var mentions = message.Mentions
-	respecMentions(author, mentions, message, timeStamp)
-
-	respecTime(author, timeStamp)
-	userLastMessage[author.String()] = timeStamp
-
-	totalRespec += lastPost(author, message.ChannelID)
+	numRespec := applyRules(author, message)
 
 	fmt.Printf("%v: %v\n", author, message.Content)
-	respec(author, totalRespec)
+	addRespec(author, numRespec)
 
-	dbNewMessage(author, incomingMessage, totalRespec, timeStamp)
-}
+	respecMentions(author, message)
 
-// fuck you double posters
-func lastPost(author *discordgo.User, channel string) (respec int) {
-	if user, _ := lastUserPost[channel]; user == author.String() {
-		respec -= 1
-	} else {
-		respec += 1
-	}
-	lastUserPost[channel] = author.String()
-	return
-}
-
-// fuck arbitrary amounts of letters
-func respecLetters(content string) (respec int) {
-	var capsCount int64
-	var vowelCount int64
-	var consonantCount int64
-	var otherCount int64
-
-	for _, c := range content {
-		switch letters[c] {
-		case "capVowel":
-			capsCount++
-			vowelCount++
-		case "vowel":
-			vowelCount++
-		case "capConsonant":
-			capsCount++
-			consonantCount++
-		case "consonant":
-			consonantCount++
-		default:
-			otherCount++
-		}
-	}
-
-	var totalLetters = big.NewInt(consonantCount + vowelCount)
-
-	if totalLetters.ProbablyPrime(2) && totalLetters.Int64() > 10 {
-		respec += 5
-	}
-	if totalLetters.Int64() == capsCount {
-		respec -= 5
-	}
-	if vowelCount > consonantCount {
-		respec += 1
-	} else if float64(vowelCount) < float64(consonantCount)/1.25 {
-		respec -= 1
-	}
-	if otherCount > totalLetters.Int64() {
-		respec -= 5
-	}
-	if capsCount < 1 && vowelCount > 0 && capsCount > 0 {
-		respec -= 1
-	}
-	return
-}
-
-// fuck spammers and afk's
-func respecTime(user *discordgo.User, newTime time.Time) (respec int) {
-	if oldTime, ok := userLastMessage[user.String()]; ok {
-		timeDelta := newTime.Sub(oldTime)
-		if timeDelta.Seconds() < 2 {
-			respec -= 2
-		} else if timeDelta.Hours() > 6 {
-			respec -= int(timeDelta.Hours())
-		} else {
-			respec += 1
-		}
-	}
-
-	return
-}
-
-// fucc 1 word replies or walls of text
-func respecLength(content string) (respec int) {
-	var length int
-	var words = strings.Split(content, " ")
-	length = len(words)
-
-	if length < 2 {
-		respec = -1
-	} else if length > 25 {
-		respec -= 5
-	}
-	return
+	dbNewMessage(author, incomingMessage, numRespec, timeStamp)
 }
 
 // if someone talkin to you you aight
-func respecMentions(user *discordgo.User, users []*discordgo.User, message *discordgo.Message, timeStamp time.Time) {
-	for _, v := range users {
-		respec(v, mentionValue)
-		dbMention(user, v, message, mentionValue, timeStamp)
-	}
-}
+//func respecMentions(user *discordgo.User, users []*discordgo.User, message *discordgo.Message, timeStamp time.Time) {
+func respecMentions(author *discordgo.User, message *discordgo.Message) (respec int) {
+	users := message.Mentions
+	timeStamp, _ := message.Timestamp.Parse()
 
-func respecGiven(user *discordgo.User, timeGiven time.Time) {
-	userLastRespec[user.String()] = timeGiven
+	for _, v := range users {
+		if v.ID == author.ID {
+			fmt.Println(v, "mentioned by", author)
+			addRespec(v, -mentionValue)
+			dbMention(author, v, message, -mentionValue, timeStamp)
+		} else {
+			fmt.Println(v, "mentioned by", author)
+			addRespec(v, mentionValue)
+			dbMention(author, v, message, mentionValue, timeStamp)
+		}
+	}
+
+	return 0
 }
 
 func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
@@ -264,8 +145,7 @@ func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
 // if you try to respec yourself fuck you
 func respecingSelf(author *discordgo.User, users []*discordgo.User) bool {
 	for _, v := range users {
-		if author == v {
-			respec(v, -15)
+		if author.ID == v.ID {
 			return true
 		}
 	}
@@ -277,7 +157,7 @@ func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	mentions := incomingMessage.Message.Mentions
 	author := incomingMessage.Message.Author
 	timeStamp, _ := incomingMessage.Timestamp.Parse()
-	numRespec := 4
+	numRespec := giveRespecValue
 	if !positive {
 		numRespec = -numRespec
 	}
@@ -285,19 +165,21 @@ func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	// lose respec if you use it wrong
 	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
 		fmt.Println(author, "Used respec wrong")
-		respec(author, -5)
-		dbGiveRespec(author, author, -5, timeStamp)
-		respecGiven(author, timeStamp)
-		return
+		addRespec(author, -giveRespecValue)
+		dbGiveRespec(author, author, -giveRespecValue, timeStamp)
+		mentions = nil
+	} else {
+		addRespec(author, correctUsageValue)
+		dbGiveRespec(author, author, correctUsageValue, timeStamp)
 	}
 
 	for _, v := range mentions {
 		fmt.Println(author, " gave respec to ", v)
-		respec(v, numRespec)
+		addRespec(v, numRespec)
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
 
-	respecGiven(author, timeStamp)
+	userLastRespec[author.String()] = timeStamp
 }
 
 // get all da users in list

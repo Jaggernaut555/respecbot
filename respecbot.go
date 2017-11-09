@@ -39,6 +39,7 @@ func init() {
 	InitDB()
 	InitRatings()
 	InitCmds()
+	InitRules()
 
 	if *purge {
 		if dbPassword != "" {

@@ -11,8 +11,9 @@ import (
 )
 
 type User struct {
-	ID     string `xorm:"varchar(50) pk"`
-	Respec int    `xorm:"default 0"`
+	Username string `xorm:"varchar(50) pk"`
+	Respec   int    `xorm:"default 0"`
+	ID       string `xorm:"pk"`
 }
 
 type Message struct {
@@ -28,7 +29,7 @@ type Reaction struct {
 	MessageID string    `xorm:"varchar(50) pk"`
 	UserID    string    `xorm:"varchar(50) pk"`
 	Time      time.Time `xorm:"not null"`
-	Removed   time.Time
+	Removed   time.Time `xorm:"default null"`
 }
 
 type Respec struct {
@@ -115,19 +116,19 @@ func dbLoadRespec(list *map[string]int) {
 		panic(err)
 	}
 	for _, v := range users {
-		(*list)[v.ID] = v.Respec
+		(*list)[v.Username] = v.Respec
 	}
 }
 
 func dbGainRespec(discordUser *discordgo.User, respec int) {
-	user := &User{ID: discordUser.String()}
+	user := &User{Username: discordUser.String(), ID: discordUser.ID}
 	has, err := engine.Get(user)
 	if err != nil {
 		panic(err)
 	}
 	if has {
 		user.Respec += respec
-		if _, err = engine.ID(user.ID).Cols("Respec").Update(user); err != nil {
+		if _, err = engine.ID(core.PK{user.Username, user.ID}).Cols("Respec").Update(user); err != nil {
 			panic(err)
 		}
 	} else {
@@ -154,8 +155,6 @@ func dbGiveRespec(giver *discordgo.User, receiver *discordgo.User, numRespec int
 
 func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReactionAdd, timeStamp time.Time) {
 	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Time: timeStamp, Content: rctn.Emoji.ID}
-
-	fmt.Println(reaction)
 
 	has, err := engine.Get(&reaction)
 	if err != nil {
