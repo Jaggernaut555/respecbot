@@ -13,7 +13,7 @@ import (
 type User struct {
 	Username string `xorm:"varchar(50) pk"`
 	Respec   int    `xorm:"default 0"`
-	ID       string `xorm:"pk"`
+	ID       string `xorm:"varchar(50) pk"`
 }
 
 type Message struct {
