@@ -104,9 +104,13 @@ func cmdNotHere(session *discordgo.Session, message *discordgo.MessageCreate, ar
 }
 
 func cmdStats(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
+	leaders, losers := GetRespec()
 	var stats = "Leaderboard:\n```\n"
-	stats += GetMostRespec()
+	stats += leaders
 	stats += "```"
+	stats += "\nLosers: `"
+	stats += strings.Join(losers, ",")
+	stats += "`"
 	SendReply(session, message.ChannelID, stats)
 }
 

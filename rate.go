@@ -196,8 +196,9 @@ func getRatingsLists() (users pairList) {
 }
 
 // show 10 most RESPEC peep
-func GetMostRespec() (reply string) {
+func GetRespec() (Leaderboard string, negativeUsers []string) {
 	var buf bytes.Buffer
+	negativeUsers = make([]string, 0)
 	users := getRatingsLists()
 
 	sort.Sort(sort.Reverse(users))
@@ -209,11 +210,15 @@ func GetMostRespec() (reply string) {
 		if k > 15 {
 			break
 		}
-		fmt.Fprintf(w, "%v\t%v\t\n", v.Key, v.Value)
+		if v.Value > 0 {
+			fmt.Fprintf(w, "%v\t%v\t\n", v.Key, v.Value)
+		} else {
+			negativeUsers = append(negativeUsers, v.Key)
+		}
 	}
 	w.Flush()
 
-	reply = fmt.Sprintf("%v", buf.String())
+	Leaderboard = fmt.Sprintf("%v", buf.String())
 	return
 }
 
