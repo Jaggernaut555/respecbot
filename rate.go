@@ -72,16 +72,13 @@ func isNotALoser(guildID string, user *discordgo.User) {
 }
 
 func addRespec(guildId string, user *discordgo.User, rating int) {
-	//guild := DiscordSession.Guild(guildId)
-
 	temp := addRespecHelp(user, rating)
 
 	if temp < 0 {
 		isALoser(guildId, user)
-	} else {
+	} else if temp > 0 {
 		isNotALoser(guildId, user)
 	}
-
 }
 
 func addRespecHelp(user *discordgo.User, rating int) int {
@@ -106,7 +103,13 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 
 	dbGainRespec(user, newRespec)
 
-	return userRespec + newRespec
+	if userRespec >= 0 && userRespec+newRespec < 0 {
+		return -1
+	} else if userRespec < 0 && userRespec+newRespec >= 0 {
+		return 1
+	}
+
+	return 0
 }
 
 // give respec by reacting
