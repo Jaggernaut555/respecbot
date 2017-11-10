@@ -201,9 +201,15 @@ func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
 }
 
 // if you try to respec yourself fuck you
-func respecingSelf(author *discordgo.User, users []*discordgo.User) bool {
+func validGiveRespec(author *discordgo.User, users []*discordgo.User) bool {
+	usersGiven := make(map[*discordgo.User]bool)
 	for _, v := range users {
 		if author.ID == v.ID {
+			return true
+		}
+		if !usersGiven[v] {
+			usersGiven[v] = true
+		} else {
 			return true
 		}
 	}
@@ -237,8 +243,9 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 	}
 
 	// lose respec if you use it wrong
-	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
+	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || validGiveRespec(author, mentions) {
 		fmt.Println(author, "Used respec wrong")
+		numRespec *= 2
 		addRespec(guild.ID, author, -numRespec)
 		dbGiveRespec(author, author, -numRespec, timeStamp)
 		mentions = nil
@@ -283,7 +290,7 @@ func GetRespec() (Leaderboard string, negativeUsers []string) {
 		if k > 15 {
 			break
 		}
-		if v.Value > 0 {
+		if v.Value >= 0 {
 			fmt.Fprintf(w, "%v\t%v\t\n", v.Key, v.Value)
 		} else {
 			negativeUsers = append(negativeUsers, v.Key)
