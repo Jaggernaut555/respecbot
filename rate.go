@@ -43,15 +43,56 @@ func InitRatings() {
 	totalRespec = dbGetTotalRespec()
 }
 
-func addRespec(user *discordgo.User, rating int) {
+func isALoser(guildID string, user *discordgo.User) {
+	roles, _ := DiscordSession.GuildRoles(guildID)
+	var role *discordgo.Role
+	for _, v := range roles {
+		if v.Name == "Losers" {
+			role = v
+		}
+	}
+	if role == nil {
+		return
+	}
+	DiscordSession.GuildMemberRoleAdd(guildID, user.ID, role.ID)
+}
+
+func isNotALoser(guildID string, user *discordgo.User) {
+	roles, _ := DiscordSession.GuildRoles(guildID)
+	var role *discordgo.Role
+	for _, v := range roles {
+		if v.Name == "Losers" {
+			role = v
+		}
+	}
+	if role == nil {
+		return
+	}
+	DiscordSession.GuildMemberRoleRemove(guildID, user.ID, role.ID)
+}
+
+func addRespec(guildId string, user *discordgo.User, rating int) {
+	//guild := DiscordSession.Guild(guildId)
+
+	temp := addRespecHelp(user, rating)
+
+	if temp < 0 {
+		isALoser(guildId, user)
+	} else {
+		isNotALoser(guildId, user)
+	}
+
+}
+
+func addRespecHelp(user *discordgo.User, rating int) int {
 	// abs(userRating) / abs(totalRespec)
 	userRespec := dbGetUserRespec(user)
 	newRespec := rating
 	if totalRespec != 0 && userRespec != 0 {
 		temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
 		//var temp = math.Abs(float64(userRespec)) / math.Abs(float64(totalRespec))
-		if temp > 0.33 {
-			temp = 0.33
+		if temp > 0.15 {
+			temp = 0.15
 		} else if temp < 0.01 {
 			temp = 0.01
 		}
@@ -64,47 +105,59 @@ func addRespec(user *discordgo.User, rating int) {
 	fmt.Printf("%v %+d respec\n", user, newRespec)
 
 	dbGainRespec(user, newRespec)
+
+	return userRespec + newRespec
 }
 
 // give respec by reacting
-func RespecReactionAdd(session *discordgo.Session, reaction *discordgo.MessageReactionAdd) {
-	user, _ := session.User(reaction.UserID)
-	message, _ := session.ChannelMessage(reaction.ChannelID, reaction.MessageID)
+func RespecReactionAdd(reaction *discordgo.MessageReactionAdd) {
+	user, _ := DiscordSession.User(reaction.UserID)
+	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
+
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
 	fmt.Printf("%v got a reaction from %v\n", author, user)
 	if user.ID == author.ID {
-		addRespec(author, -reactionValue)
+		addRespec(guild.ID, author, -reactionValue)
 	} else {
-		addRespec(author, reactionValue)
+		addRespec(guild.ID, author, reactionValue)
 	}
 
 	dbReactionAdd(author, reaction, timeStamp)
 }
 
 // no fuckin gaming the system
-func RespecReactionRemove(session *discordgo.Session, reaction *discordgo.MessageReactionRemove) {
-	user, _ := session.User(reaction.UserID)
-	message, _ := session.ChannelMessage(reaction.ChannelID, reaction.MessageID)
+func RespecReactionRemove(reaction *discordgo.MessageReactionRemove) {
+	user, _ := DiscordSession.User(reaction.UserID)
+	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
+
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
 	fmt.Printf("%v lost a reaction\n", author)
-	addRespec(author, -reactionValue)
+	addRespec(guild.ID, author, -reactionValue)
 	fmt.Printf("%v removed a reaction\n", user)
-	addRespec(user, -reactionValue)
+	addRespec(guild.ID, user, -reactionValue)
 	dbReactionRemove(author, reaction, timeStamp)
 }
 
 // evaluate messages
 func RespecMessage(incomingMessage *discordgo.MessageCreate) {
-
 	message := incomingMessage.Message
 	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
 	numRespec := applyRules(author, message)
 
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
 	fmt.Printf("%v: %v\n", author, message.Content)
-	addRespec(author, numRespec)
+	addRespec(guild.ID, author, numRespec)
 
 	respecMentions(author, message)
 
@@ -112,19 +165,21 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 }
 
 // if someone talkin to you you aight
-//func respecMentions(user *discordgo.User, users []*discordgo.User, message *discordgo.Message, timeStamp time.Time) {
 func respecMentions(author *discordgo.User, message *discordgo.Message) (respec int) {
 	users := message.Mentions
 	timeStamp, _ := message.Timestamp.Parse()
 
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
 	for _, v := range users {
 		if v.ID == author.ID {
 			fmt.Println(v, "mentioned by", author)
-			addRespec(v, -mentionValue)
+			addRespec(guild.ID, v, -mentionValue)
 			dbMention(author, v, message, -mentionValue, timeStamp)
 		} else {
 			fmt.Println(v, "mentioned by", author)
-			addRespec(v, mentionValue)
+			addRespec(guild.ID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
 		}
 	}
@@ -153,19 +208,22 @@ func respecingSelf(author *discordgo.User, users []*discordgo.User) bool {
 }
 
 // gif someone respec
-func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
-	mentions := incomingMessage.Message.Mentions
-	author := incomingMessage.Message.Author
-	timeStamp, _ := incomingMessage.Timestamp.Parse()
+func GiveRespec(message *discordgo.MessageCreate, positive bool) {
+	mentions := message.Message.Mentions
+	author := message.Message.Author
+	timeStamp, _ := message.Timestamp.Parse()
 	respec := dbGetUserRespec(author)
 	numRespec := 0
+
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
 
 	if respec <= 0 {
 		numRespec = 2
 	} else {
 		numRespec = respec / 10
-		if numRespec < 2 {
-			numRespec = 2
+		if numRespec < 5 {
+			numRespec = 5
 		} else if numRespec > 25 {
 			numRespec = 25
 		}
@@ -178,17 +236,17 @@ func GiveRespec(incomingMessage *discordgo.MessageCreate, positive bool) {
 	// lose respec if you use it wrong
 	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || respecingSelf(author, mentions) {
 		fmt.Println(author, "Used respec wrong")
-		addRespec(author, -numRespec)
+		addRespec(guild.ID, author, -numRespec)
 		dbGiveRespec(author, author, -numRespec, timeStamp)
 		mentions = nil
 	} else {
-		addRespec(author, correctUsageValue)
+		addRespec(guild.ID, author, correctUsageValue)
 		dbGiveRespec(author, author, correctUsageValue, timeStamp)
 	}
 
 	for _, v := range mentions {
 		fmt.Println(author, " gave respec to ", v)
-		addRespec(v, numRespec)
+		addRespec(guild.ID, v, numRespec)
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
 

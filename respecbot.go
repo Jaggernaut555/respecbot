@@ -22,10 +22,11 @@ const (
 
 // Global vars
 var (
-	discordToken string
-	dbPassword   string
-	Channels     map[string]bool
-	Servers      map[string]bool
+	discordToken   string
+	dbPassword     string
+	Channels       map[string]bool
+	Servers        map[string]bool
+	DiscordSession *discordgo.Session
 )
 
 func init() {
@@ -62,29 +63,30 @@ func main() {
 		return
 	}
 
-	dg, err := discordgo.New("Bot " + discordToken)
+	var err error
+	DiscordSession, err = discordgo.New("Bot " + discordToken)
 	if err != nil {
 		log.Println("error creating Discord session,", err)
 		return
 	}
 
 	// add a handler for when messages are posted
-	dg.AddHandler(messageCreate)
-	dg.AddHandler(reactionAdd)
-	dg.AddHandler(reactionRemove)
+	DiscordSession.AddHandler(messageCreate)
+	DiscordSession.AddHandler(reactionAdd)
+	DiscordSession.AddHandler(reactionRemove)
 
-	err = dg.Open()
+	err = DiscordSession.Open()
 	if err != nil {
 		log.Println("error opening connection,", err)
 		return
 	}
 
-	defer dg.Close()
-
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
+
+	defer DiscordSession.Close()
 }
 
 func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate) {
@@ -94,7 +96,7 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 	}
 
 	if strings.HasPrefix(message.Content, CmdChar) {
-		HandleCommand(session, message, strings.TrimPrefix(message.Content, CmdChar))
+		HandleCommand(message, strings.TrimPrefix(message.Content, CmdChar))
 		return
 	}
 
@@ -108,17 +110,17 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 }
 
 func reactionAdd(session *discordgo.Session, reaction *discordgo.MessageReactionAdd) {
-	RespecReactionAdd(session, reaction)
+	RespecReactionAdd(reaction)
 }
 
 func reactionRemove(session *discordgo.Session, reaction *discordgo.MessageReactionRemove) {
-	RespecReactionRemove(session, reaction)
+	RespecReactionRemove(reaction)
 }
 
-func isValidChannel(session *discordgo.Session, channelID string) bool {
+func isValidChannel(channelID string) bool {
 	return Channels[channelID]
 }
 
-func SendReply(session *discordgo.Session, channel string, reply string) {
-	session.ChannelMessageSend(channel, reply)
+func SendReply(channel string, reply string) {
+	DiscordSession.ChannelMessageSend(channel, reply)
 }

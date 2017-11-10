@@ -14,7 +14,7 @@ const (
 )
 
 // CmdFuncType Command function type
-type CmdFuncType func(*discordgo.Session, *discordgo.MessageCreate, []string)
+type CmdFuncType func(*discordgo.MessageCreate, []string)
 
 // CmdFuncHelpType The type stored in the CmdFuncs map to map a function and helper text to a command
 type CmdFuncHelpType struct {
@@ -42,7 +42,7 @@ func InitCmds() {
 	}
 }
 
-func HandleCommand(session *discordgo.Session, message *discordgo.MessageCreate, cmd string) {
+func HandleCommand(message *discordgo.MessageCreate, cmd string) {
 	args := strings.Split(cmd, " ")
 	if len(args) == 0 {
 		return
@@ -50,16 +50,16 @@ func HandleCommand(session *discordgo.Session, message *discordgo.MessageCreate,
 	CmdFuncHelpPair, ok := CmdFuncs[args[0]]
 
 	if ok {
-		if !CmdFuncHelpPair.allowedChannelOnly || isValidChannel(session, message.ChannelID) {
-			CmdFuncHelpPair.function(session, message, args)
+		if !CmdFuncHelpPair.allowedChannelOnly || isValidChannel(message.ChannelID) {
+			CmdFuncHelpPair.function(message, args)
 		}
-	} else if isValidChannel(session, message.ChannelID) {
+	} else if isValidChannel(message.ChannelID) {
 		var reply = fmt.Sprintf("I do not have command `%s`", args[0])
-		SendReply(session, message.ChannelID, reply)
+		SendReply(message.ChannelID, reply)
 	}
 }
 
-func cmdHelp(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
+func cmdHelp(message *discordgo.MessageCreate, args []string) {
 	// Build array of the keys in CmdFuncs
 	var keys []string
 	for k := range CmdFuncs {
@@ -74,52 +74,52 @@ func cmdHelp(session *discordgo.Session, message *discordgo.MessageCreate, args 
 		cmds += fmt.Sprintf("%s - %s\n", key, CmdFuncs[key].help)
 	}
 	cmds += "```\n"
-	SendReply(session, message.ChannelID, cmds)
+	SendReply(message.ChannelID, cmds)
 }
 
-func cmdVersion(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
-	SendReply(session, message.ChannelID, "Version: "+Version)
+func cmdVersion(message *discordgo.MessageCreate, args []string) {
+	SendReply(message.ChannelID, "Version: "+Version)
 }
 
-func cmdHere(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
-	channel, err := session.Channel(message.ChannelID)
+func cmdHere(message *discordgo.MessageCreate, args []string) {
+	channel, err := DiscordSession.Channel(message.ChannelID)
 	if err != nil {
 		panic(err)
 	}
 
 	if Channels[channel.ID] {
-		SendReply(session, channel.ID, "Yeah")
+		SendReply(channel.ID, "Yeah")
 		return
 	}
 	Channels[channel.ID] = true
 	Servers[channel.GuildID] = true
-	SendReply(session, channel.ID, "Fuck on me")
+	SendReply(channel.ID, "Fuck on me")
 }
 
-func cmdNotHere(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
-	channel, _ := session.Channel(message.ChannelID)
+func cmdNotHere(message *discordgo.MessageCreate, args []string) {
+	channel, _ := DiscordSession.Channel(message.ChannelID)
 	Channels[channel.ID] = false
 	Servers[channel.GuildID] = false
 
 }
 
-func cmdStats(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
+func cmdStats(message *discordgo.MessageCreate, args []string) {
 	leaders, losers := GetRespec()
 	var stats = "Leaderboard:\n```\n"
 	stats += leaders
 	stats += "```"
-	stats += "\nLosers: `"
-	stats += strings.Join(losers, ",")
-	stats += "`"
-	SendReply(session, message.ChannelID, stats)
+	stats += "\nLosers:` "
+	stats += strings.Join(losers, ", ")
+	stats += " `"
+	SendReply(message.ChannelID, stats)
 }
 
-func cmdRespec(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
+func cmdRespec(message *discordgo.MessageCreate, args []string) {
 	// give a user respec
 	GiveRespec(message, true)
 }
 
-func cmdNoRespec(session *discordgo.Session, message *discordgo.MessageCreate, args []string) {
+func cmdNoRespec(message *discordgo.MessageCreate, args []string) {
 	// lose a user respec
 	GiveRespec(message, false)
 }
