@@ -160,9 +160,10 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 	guild, _ := DiscordSession.Guild(channel.GuildID)
 
 	fmt.Printf("%v: %v\n", author, message.Content)
-	addRespec(guild.ID, author, numRespec)
 
-	respecMentions(author, message)
+	numRespec += respecMentions(author, message)
+
+	addRespec(guild.ID, author, numRespec)
 
 	dbNewMessage(author, incomingMessage, numRespec, timeStamp)
 }
@@ -171,23 +172,26 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 func respecMentions(author *discordgo.User, message *discordgo.Message) (respec int) {
 	users := message.Mentions
 	timeStamp, _ := message.Timestamp.Parse()
+	usersMentioned := make(map[string]bool)
 
 	channel, _ := DiscordSession.Channel(message.ChannelID)
 	guild, _ := DiscordSession.Guild(channel.GuildID)
 
 	for _, v := range users {
-		if v.ID == author.ID {
-			fmt.Println(v, "mentioned by", author)
-			addRespec(guild.ID, v, -mentionValue)
-			dbMention(author, v, message, -mentionValue, timeStamp)
-		} else {
+		if !usersMentioned[v.ID] && v.ID != author.ID {
+			usersMentioned[v.ID] = true
 			fmt.Println(v, "mentioned by", author)
 			addRespec(guild.ID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
+		} else if v.ID == author.ID {
+			respec -= mentionValue
+		} else {
+			fmt.Println(v, "double mentioned by", author)
+			respec -= mentionValue
 		}
 	}
 
-	return 0
+	return
 }
 
 func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
@@ -202,13 +206,13 @@ func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
 
 // if you try to respec yourself fuck you
 func validGiveRespec(author *discordgo.User, users []*discordgo.User) bool {
-	usersGiven := make(map[*discordgo.User]bool)
+	usersGiven := make(map[string]bool)
 	for _, v := range users {
 		if author.ID == v.ID {
 			return true
 		}
-		if !usersGiven[v] {
-			usersGiven[v] = true
+		if !usersGiven[v.ID] {
+			usersGiven[v.ID] = true
 		} else {
 			return true
 		}
