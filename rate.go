@@ -49,6 +49,7 @@ func isALoser(guildID string, user *discordgo.User) {
 	for _, v := range roles {
 		if v.Name == "Losers" {
 			role = v
+			break
 		}
 	}
 	if role == nil {
@@ -63,6 +64,7 @@ func isNotALoser(guildID string, user *discordgo.User) {
 	for _, v := range roles {
 		if v.Name == "Losers" {
 			role = v
+			break
 		}
 	}
 	if role == nil {
@@ -156,12 +158,18 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 	timeStamp, _ := message.Timestamp.Parse()
 	numRespec := applyRules(author, message)
 
-	channel, _ := DiscordSession.Channel(message.ChannelID)
-	guild, _ := DiscordSession.Guild(channel.GuildID)
+	channel, err := DiscordSession.Channel(message.ChannelID)
+	if err != nil {
+		return
+	}
+	guild, err := DiscordSession.Guild(channel.GuildID)
+	if err != nil {
+		return
+	}
 
 	fmt.Printf("%v: %v\n", author, message.Content)
 
-	numRespec += respecMentions(author, message)
+	numRespec += respecMentions(guild.ID, author, message)
 
 	addRespec(guild.ID, author, numRespec)
 
@@ -169,19 +177,16 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 }
 
 // if someone talkin to you you aight
-func respecMentions(author *discordgo.User, message *discordgo.Message) (respec int) {
+func respecMentions(guildID string, author *discordgo.User, message *discordgo.Message) (respec int) {
 	users := message.Mentions
 	timeStamp, _ := message.Timestamp.Parse()
 	usersMentioned := make(map[string]bool)
-
-	channel, _ := DiscordSession.Channel(message.ChannelID)
-	guild, _ := DiscordSession.Guild(channel.GuildID)
 
 	for _, v := range users {
 		if !usersMentioned[v.ID] && v.ID != author.ID {
 			usersMentioned[v.ID] = true
 			fmt.Println(v, "mentioned by", author)
-			addRespec(guild.ID, v, mentionValue)
+			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
 		} else if v.ID == author.ID {
 			respec -= mentionValue
