@@ -26,7 +26,8 @@ const (
 )
 
 var (
-	userLastRespec map[string]time.Time
+	userLastRespec  map[string]time.Time
+	userLastMention map[string]time.Time
 
 	totalRespec int
 )
@@ -34,6 +35,7 @@ var (
 func InitRatings() {
 	userRatings := make(map[string]int)
 	userLastRespec = make(map[string]time.Time)
+	userLastMention = make(map[string]time.Time)
 
 	rand.Seed(time.Now().Unix())
 
@@ -183,13 +185,16 @@ func respecMentions(guildID string, author *discordgo.User, message *discordgo.M
 	usersMentioned := make(map[string]bool)
 
 	for _, v := range users {
-		if !usersMentioned[v.ID] && v.ID != author.ID {
+		if !usersMentioned[v.ID] && v.ID != author.ID && checkLastMention(v, timeStamp) {
 			usersMentioned[v.ID] = true
+			userLastMention[v.ID] = timeStamp
 			fmt.Println(v, "mentioned by", author)
 			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
 		} else if v.ID == author.ID {
 			respec -= mentionValue
+		} else if !checkLastMention(v, timeStamp) {
+			dbMention(author, v, message, 0, timeStamp)
 		} else {
 			fmt.Println(v, "double mentioned by", author)
 			respec -= mentionValue
@@ -199,8 +204,18 @@ func respecMentions(guildID string, author *discordgo.User, message *discordgo.M
 	return
 }
 
+func checkLastMention(user *discordgo.User, timeGiven time.Time) bool {
+	if oldTime, ok := userLastMention[user.ID]; ok {
+		timeDelta := timeGiven.Sub(oldTime)
+		if timeDelta.Minutes() < 5 {
+			return true
+		}
+	}
+	return false
+}
+
 func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := userLastRespec[user.String()]; ok {
+	if oldTime, ok := userLastRespec[user.ID]; ok {
 		timeDelta := timeGiven.Sub(oldTime)
 		if timeDelta.Minutes() < 30 {
 			return true
@@ -269,7 +284,7 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
 
-	userLastRespec[author.String()] = timeStamp
+	userLastRespec[author.ID] = timeStamp
 }
 
 // get all da users in list
