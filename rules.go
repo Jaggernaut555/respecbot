@@ -35,6 +35,8 @@ func InitRules() {
 	channelLastMessage = make(map[string]*discordgo.Message)
 	userLastMessage = make(map[string]time.Time)
 
+	dbGetLastMessage(&userLastMessage)
+
 	var vowels = []rune{'a', 'e', 'i', 'o', 'u'}
 	var capVowels = []rune{'A', 'E', 'I', 'O', 'U'}
 	var consonants = []rune{'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'}
@@ -91,7 +93,7 @@ func lastPost(author *discordgo.User, newMessage *discordgo.Message) (respec int
 
 // fuck arbitrary amounts of letters
 func respecLetters(author *discordgo.User, message *discordgo.Message) (respec int) {
-	content := message.Content
+	content := message.ContentWithMentionsReplaced()
 	var capsCount int64
 	var vowelCount int64
 	var consonantCount int64
@@ -158,7 +160,7 @@ func respecTime(author *discordgo.User, message *discordgo.Message) (respec int)
 // fucc 1 word replies or walls of text
 //func respecLength(content string) (respec int) {
 func respecLength(author *discordgo.User, message *discordgo.Message) (respec int) {
-	content := message.Content
+	content := message.ContentWithMentionsReplaced()
 
 	words := strings.Split(content, " ")
 	length := len(words)

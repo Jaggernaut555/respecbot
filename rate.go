@@ -40,6 +40,9 @@ func InitRatings() {
 	rand.Seed(time.Now().Unix())
 
 	dbLoadRespec(&userRatings)
+	dbGetLastRespec(&userLastRespec)
+	dbGetLastMention(&userLastMention)
+
 	fmt.Println("loaded", len(userRatings), "ratings")
 
 	totalRespec = dbGetTotalRespec()
@@ -169,7 +172,7 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 		return
 	}
 
-	fmt.Printf("%v: %v\n", author, message.Content)
+	fmt.Printf("%v: %v\n", author, message.ContentWithMentionsReplaced())
 
 	numRespec += respecMentions(guild.ID, author, message)
 
@@ -182,62 +185,59 @@ func RespecMessage(incomingMessage *discordgo.MessageCreate) {
 func respecMentions(guildID string, author *discordgo.User, message *discordgo.Message) (respec int) {
 	users := message.Mentions
 	timeStamp, _ := message.Timestamp.Parse()
-	usersMentioned := make(map[string]bool)
 
 	for _, v := range users {
-		if !usersMentioned[v.ID] && v.ID != author.ID && checkLastMention(v, timeStamp) {
-			usersMentioned[v.ID] = true
-			userLastMention[v.ID] = timeStamp
+		if v.ID == author.ID {
+			fmt.Println(author, "mentioned self")
+			dbMention(author, v, message, -mentionValue, timeStamp)
+			respec -= mentionValue
+		} else if !canMention(v, timeStamp) {
+			fmt.Println(v, "mentioned by", author, "too soon since last mention")
+			dbMention(author, v, message, 0, timeStamp)
+		} else {
+			userLastMention[v.String()] = timeStamp
 			fmt.Println(v, "mentioned by", author)
 			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
-		} else if v.ID == author.ID {
-			respec -= mentionValue
-		} else if !checkLastMention(v, timeStamp) {
-			dbMention(author, v, message, 0, timeStamp)
-		} else {
-			fmt.Println(v, "double mentioned by", author)
-			respec -= mentionValue
 		}
 	}
 
 	return
 }
 
-func checkLastMention(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := userLastMention[user.ID]; ok {
+func canMention(user *discordgo.User, timeGiven time.Time) bool {
+	if oldTime, ok := userLastMention[user.String()]; ok {
 		timeDelta := timeGiven.Sub(oldTime)
 		if timeDelta.Minutes() < 5 {
-			return true
-		}
-	}
-	return false
-}
-
-func checkLastRespecGiven(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := userLastRespec[user.ID]; ok {
-		timeDelta := timeGiven.Sub(oldTime)
-		if timeDelta.Minutes() < 30 {
-			return true
-		}
-	}
-	return false
-}
-
-// if you try to respec yourself fuck you
-func validGiveRespec(author *discordgo.User, users []*discordgo.User) bool {
-	usersGiven := make(map[string]bool)
-	for _, v := range users {
-		if author.ID == v.ID {
-			return true
-		}
-		if !usersGiven[v.ID] {
-			usersGiven[v.ID] = true
+			return false
 		} else {
 			return true
 		}
 	}
-	return false
+	return true
+}
+
+func canGiveRespec(user *discordgo.User, timeGiven time.Time) bool {
+	if oldTime, ok := userLastRespec[user.String()]; ok {
+		timeDelta := timeGiven.Sub(oldTime)
+		if timeDelta.Minutes() < 30 {
+			return false
+		}
+	}
+	return true
+}
+
+// if you try to respec yourself fuck you
+func validGiveRespec(author *discordgo.User, users []*discordgo.User, timeGiven time.Time) bool {
+	if !canGiveRespec(author, timeGiven) {
+		return false
+	}
+	for _, v := range users {
+		if author.ID == v.ID {
+			return false
+		}
+	}
+	return true
 }
 
 // gif someone respec
@@ -267,7 +267,7 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 	}
 
 	// lose respec if you use it wrong
-	if len(mentions) < 1 || checkLastRespecGiven(author, timeStamp) || validGiveRespec(author, mentions) {
+	if len(mentions) < 1 || !validGiveRespec(author, mentions, timeStamp) {
 		fmt.Println(author, "Used respec wrong")
 		numRespec *= 2
 		addRespec(guild.ID, author, -numRespec)
@@ -284,7 +284,7 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
 
-	userLastRespec[author.ID] = timeStamp
+	userLastRespec[author.String()] = timeStamp
 }
 
 // get all da users in list

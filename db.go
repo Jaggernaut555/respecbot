@@ -200,6 +200,48 @@ func dbMention(giver *discordgo.User, receiver *discordgo.User, message *discord
 	}
 }
 
+func dbGetLastMessage(list *map[string]time.Time) {
+	var messages []Message
+
+	err := engine.Alias("a").Select("a.UserID , a.Time").Where("a.Time = (SELECT max(Time) From Message b WHERE a.UserID = b.UserID)").Find(&messages)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range messages {
+		(*list)[v.UserID] = v.Time
+	}
+}
+
+func dbGetLastRespec(list *map[string]time.Time) {
+	var respec []Respec
+
+	err := engine.Alias("a").Select("a.GiverID , a.Time").Where("a.Time = (SELECT max(Time) From Respec b WHERE a.GiverID = b.GiverID)").Find(&respec)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range respec {
+		(*list)[v.GiverID] = v.Time
+	}
+}
+
+func dbGetLastMention(list *map[string]time.Time) {
+	var mention []Mention
+
+	err := engine.Alias("a").Select("a.ReceiverID , a.Time").Where("a.Time = (SELECT max(Time) From Mention b WHERE a.ReceiverID = b.ReceiverID)").Find(&mention)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range mention {
+		(*list)[v.ReceiverID] = v.Time
+	}
+}
+
 func purgeDB() error {
 	engine.ShowSQL(true)
 	var users []User
