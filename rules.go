@@ -3,7 +3,6 @@ package main
 import (
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -21,7 +20,6 @@ var (
 	rules              []Rule
 	letters            map[rune]string
 	channelLastMessage map[string]*discordgo.Message
-	userLastMessage    map[string]time.Time
 )
 
 func InitRules() {
@@ -33,9 +31,6 @@ func InitRules() {
 
 	letters = make(map[rune]string)
 	channelLastMessage = make(map[string]*discordgo.Message)
-	userLastMessage = make(map[string]time.Time)
-
-	dbGetLastMessages(&userLastMessage)
 
 	var vowels = []rune{'a', 'e', 'i', 'o', 'u'}
 	var capVowels = []rune{'A', 'E', 'I', 'O', 'U'}
@@ -142,10 +137,8 @@ func respecLetters(author *discordgo.User, message *discordgo.Message) (respec i
 
 // fuck spammers and afk's
 func respecTime(author *discordgo.User, message *discordgo.Message) (respec int) {
-	//func respecTime(user *discordgo.User, newTime time.Time) (respec int) {
-
 	timeStamp, _ := message.Timestamp.Parse()
-	if oldTime, ok := userLastMessage[author.String()]; ok {
+	if oldTime, ok := dbGetUserLastMessageTime(author.String()); ok {
 		timeDelta := timeStamp.Sub(oldTime)
 		if timeDelta.Seconds() < 2 {
 			respec -= smallValue
@@ -153,12 +146,10 @@ func respecTime(author *discordgo.User, message *discordgo.Message) (respec int)
 			respec -= int(timeDelta.Hours()) * minValue
 		}
 	}
-	userLastMessage[author.String()] = timeStamp
 	return
 }
 
 // fucc 1 word replies or walls of text
-//func respecLength(content string) (respec int) {
 func respecLength(author *discordgo.User, message *discordgo.Message) (respec int) {
 	content := message.ContentWithMentionsReplaced()
 

@@ -19,11 +19,6 @@ type pair struct {
 
 type pairList []pair
 
-type reactionUsers struct {
-	GiverID    string
-	ReceiverID string
-}
-
 const (
 	correctUsageValue = 2
 	reactionValue     = 2
@@ -31,28 +26,15 @@ const (
 )
 
 var (
-	userLastRespec         map[string]time.Time
-	userLastMention        map[string]time.Time
-	userLastReactionAdd    map[reactionUsers]time.Time
-	userLastReactionRemove map[reactionUsers]time.Time
-
 	totalRespec int
 )
 
 func InitRatings() {
 	userRatings := make(map[string]int)
-	userLastRespec = make(map[string]time.Time)
-	userLastMention = make(map[string]time.Time)
-	userLastReactionAdd = make(map[reactionUsers]time.Time)
-	userLastReactionRemove = make(map[reactionUsers]time.Time)
 
 	rand.Seed(time.Now().Unix())
 
 	dbLoadRespec(&userRatings)
-	dbGetLastRespecs(&userLastRespec)
-	dbGetLastMentions(&userLastMention)
-	dbGetLastReactionsAdded(&userLastReactionAdd)
-	dbGetLastReactionsRemoved(&userLastReactionRemove)
 
 	fmt.Println("loaded", len(userRatings), "ratings")
 
@@ -158,92 +140,6 @@ func messageExistsInDB(messageID string) bool {
 	return dbMessageExists(messageID)
 }
 
-func RespecReaction(reaction *discordgo.MessageReaction, added bool) {
-	if !messageExistsInDB(reaction.MessageID) {
-		return
-	}
-
-	if added {
-		RespecReactionAdd(reaction)
-	} else {
-		RespecReactionRemove(reaction)
-	}
-}
-
-// give respec by reacting
-func RespecReactionAdd(reaction *discordgo.MessageReaction) {
-	user, _ := DiscordSession.User(reaction.UserID)
-	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
-	author := message.Author
-	timeStamp := time.Now()
-
-	reactionUsers := reactionUsers{user.String(), author.String()}
-
-	channel, _ := DiscordSession.Channel(message.ChannelID)
-	guild, _ := DiscordSession.Guild(channel.GuildID)
-
-	if user.ID == author.ID {
-		addRespec(guild.ID, author, -reactionValue)
-	} else if validReactionAdd(reactionUsers, timeStamp) {
-		userLastReactionAdd[reactionUsers] = timeStamp
-		addRespec(guild.ID, author, reactionValue)
-	}
-
-	fmt.Printf("%v got a reaction from %v\n", author, user)
-
-	dbReactionAdd(user, reaction, timeStamp)
-}
-
-func validReactionAdd(reaction reactionUsers, timeGiven time.Time) bool {
-	if oldTime, ok := userLastReactionAdd[reaction]; ok {
-		timeDelta := timeGiven.Sub(oldTime)
-		if timeDelta.Minutes() < 5 {
-			return false
-		} else {
-			return true
-		}
-	}
-	return true
-}
-
-// no fuckin gaming the system
-func RespecReactionRemove(reaction *discordgo.MessageReaction) {
-	user, _ := DiscordSession.User(reaction.UserID)
-	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
-	author := message.Author
-	timeStamp := time.Now()
-
-	reactionUsers := reactionUsers{user.String(), author.String()}
-
-	channel, _ := DiscordSession.Channel(message.ChannelID)
-	guild, _ := DiscordSession.Guild(channel.GuildID)
-
-	if author.ID == user.ID {
-		addRespec(guild.ID, author, -reactionValue)
-	} else if validReactionRemove(reactionUsers, timeStamp) {
-		userLastReactionRemove[reactionUsers] = timeStamp
-		addRespec(guild.ID, author, -reactionValue)
-	}
-
-	fmt.Printf("%v lost a reaction\n", author)
-
-	fmt.Printf("%v removed a reaction\n", user)
-	addRespec(guild.ID, user, -reactionValue)
-	dbReactionRemove(user, reaction, timeStamp)
-}
-
-func validReactionRemove(reaction reactionUsers, timeGiven time.Time) bool {
-	if oldTime, ok := userLastReactionAdd[reaction]; ok {
-		timeDelta := timeGiven.Sub(oldTime)
-		if timeDelta.Minutes() < 5 {
-			return false
-		} else {
-			return true
-		}
-	}
-	return true
-}
-
 // if someone talkin to you you aight
 func respecMentions(guildID string, author *discordgo.User, message *discordgo.Message) (respec int) {
 	users := message.Mentions
@@ -258,7 +154,6 @@ func respecMentions(guildID string, author *discordgo.User, message *discordgo.M
 			fmt.Println(v, "mentioned by", author, "too soon since last mention")
 			dbMention(author, v, message, 0, timeStamp)
 		} else {
-			userLastMention[v.String()] = timeStamp
 			fmt.Println(v, "mentioned by", author)
 			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
@@ -269,7 +164,7 @@ func respecMentions(guildID string, author *discordgo.User, message *discordgo.M
 }
 
 func canMention(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := userLastMention[user.String()]; ok {
+	if oldTime, ok := dbGetUserLastMentionedTime(user.String()); ok {
 		timeDelta := timeGiven.Sub(oldTime)
 		if timeDelta.Minutes() < 5 {
 			return false
@@ -323,12 +218,10 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 		addRespec(guild.ID, v, numRespec)
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
-
-	userLastRespec[author.String()] = timeStamp
 }
 
 func canGiveRespec(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := userLastRespec[user.String()]; ok {
+	if oldTime, ok := dbGetUserLastRespecTime(user.String()); ok {
 		timeDelta := timeGiven.Sub(oldTime)
 		if timeDelta.Minutes() < 30 {
 			return false
@@ -345,6 +238,86 @@ func validGiveRespec(author *discordgo.User, users []*discordgo.User, timeGiven 
 	for _, v := range users {
 		if author.ID == v.ID {
 			return false
+		}
+	}
+	return true
+}
+
+func RespecReaction(reaction *discordgo.MessageReaction, added bool) {
+	if !messageExistsInDB(reaction.MessageID) {
+		return
+	}
+
+	if added {
+		RespecReactionAdd(reaction)
+	} else {
+		RespecReactionRemove(reaction)
+	}
+}
+
+// give respec by reacting
+func RespecReactionAdd(reaction *discordgo.MessageReaction) {
+	user, _ := DiscordSession.User(reaction.UserID)
+	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
+	author := message.Author
+	timeStamp := time.Now()
+
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
+	if user.ID == author.ID {
+		addRespec(guild.ID, author, -reactionValue)
+	} else if validReactionAdd(user.String(), author.String(), timeStamp) {
+		addRespec(guild.ID, author, reactionValue)
+	}
+
+	fmt.Printf("%v got a reaction from %v\n", author, user)
+
+	dbReactionAdd(user, reaction, timeStamp)
+}
+
+func validReactionAdd(GiverID, ReceiverID string, timeGiven time.Time) bool {
+	if oldTime, ok := dbGetUserLastReactionAddTime(GiverID, ReceiverID); ok {
+		timeDelta := timeGiven.Sub(oldTime)
+		if timeDelta.Minutes() < 5 {
+			return false
+		} else {
+			return true
+		}
+	}
+	return true
+}
+
+// no fuckin gaming the system
+func RespecReactionRemove(reaction *discordgo.MessageReaction) {
+	user, _ := DiscordSession.User(reaction.UserID)
+	message, _ := DiscordSession.ChannelMessage(reaction.ChannelID, reaction.MessageID)
+	author := message.Author
+	timeStamp := time.Now()
+
+	channel, _ := DiscordSession.Channel(message.ChannelID)
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
+	if author.ID == user.ID {
+		addRespec(guild.ID, author, -reactionValue)
+	} else if validReactionRemove(user.String(), author.String(), timeStamp) {
+		addRespec(guild.ID, author, -reactionValue)
+	}
+
+	fmt.Printf("%v lost a reaction\n", author)
+
+	fmt.Printf("%v removed a reaction\n", user)
+	addRespec(guild.ID, user, -reactionValue)
+	dbReactionRemove(user, reaction, timeStamp)
+}
+
+func validReactionRemove(GiverID, ReceiverID string, timeGiven time.Time) bool {
+	if oldTime, ok := dbGetUserLastReactionRemoveTime(GiverID, ReceiverID); ok {
+		timeDelta := timeGiven.Sub(oldTime)
+		if timeDelta.Minutes() < 5 {
+			return false
+		} else {
+			return true
 		}
 	}
 	return true
