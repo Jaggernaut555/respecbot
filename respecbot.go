@@ -105,16 +105,16 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 	if err != nil {
 		return
 	} else if channel != nil && Servers[channel.GuildID] == true {
-		RespecMessage(message)
+		RespecMessage(message.Message)
 	}
 }
 
 func reactionAdd(session *discordgo.Session, reaction *discordgo.MessageReactionAdd) {
-	RespecReactionAdd(reaction)
+	RespecReaction(reaction.MessageReaction, true)
 }
 
 func reactionRemove(session *discordgo.Session, reaction *discordgo.MessageReactionRemove) {
-	RespecReactionRemove(reaction)
+	RespecReaction(reaction.MessageReaction, false)
 }
 
 func isValidChannel(channelID string) bool {

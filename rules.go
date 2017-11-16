@@ -35,7 +35,7 @@ func InitRules() {
 	channelLastMessage = make(map[string]*discordgo.Message)
 	userLastMessage = make(map[string]time.Time)
 
-	dbGetLastMessage(&userLastMessage)
+	dbGetLastMessages(&userLastMessage)
 
 	var vowels = []rune{'a', 'e', 'i', 'o', 'u'}
 	var capVowels = []rune{'A', 'E', 'I', 'O', 'U'}

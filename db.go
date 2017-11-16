@@ -48,6 +48,11 @@ type Mention struct {
 	Respec     int       `xorm:"default 0"`
 }
 
+type joinReactionMessage struct {
+	Reaction `xorm:"extends"`
+	Message  `xorm:"extends"`
+}
+
 var engine *xorm.Engine
 
 func InitDB() {
@@ -139,11 +144,19 @@ func dbGainRespec(discordUser *discordgo.User, respec int) {
 	}
 }
 
-func dbNewMessage(discordUser *discordgo.User, message *discordgo.MessageCreate, numRespec int, timeStamp time.Time) {
+func dbNewMessage(discordUser *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
 	msg := &Message{ID: message.ID, Content: message.Content, Respec: numRespec, UserID: discordUser.String(), Time: timeStamp}
 	if _, err := engine.Insert(msg); err != nil {
 		panic(err)
 	}
+}
+
+func dbMessageExists(messageID string) (has bool) {
+	has, err := engine.Exist(Message{ID: messageID})
+	if err != nil {
+		panic(err)
+	}
+	return
 }
 
 func dbGiveRespec(giver *discordgo.User, receiver *discordgo.User, numRespec int, timeStamp time.Time) {
@@ -153,10 +166,10 @@ func dbGiveRespec(giver *discordgo.User, receiver *discordgo.User, numRespec int
 	}
 }
 
-func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReactionAdd, timeStamp time.Time) {
-	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Time: timeStamp, Content: rctn.Emoji.ID}
+func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
+	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Content: rctn.Emoji.ID}
 
-	has, err := engine.Get(&reaction)
+	has, err := engine.Exist(&reaction)
 	if err != nil {
 		panic(err)
 	}
@@ -167,12 +180,14 @@ func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReactionA
 		}
 	}
 
+	reaction.Time = timeStamp
+
 	if _, err = engine.Insert(reaction); err != nil {
 		panic(err)
 	}
 }
 
-func dbReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReactionRemove, timeStamp time.Time) {
+func dbReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
 	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Content: rctn.Emoji.ID}
 
 	has, err := engine.Get(&reaction)
@@ -200,7 +215,7 @@ func dbMention(giver *discordgo.User, receiver *discordgo.User, message *discord
 	}
 }
 
-func dbGetLastMessage(list *map[string]time.Time) {
+func dbGetLastMessages(list *map[string]time.Time) {
 	var messages []Message
 
 	err := engine.Alias("a").Select("a.UserID , a.Time").Where("a.Time = (SELECT max(Time) From Message b WHERE a.UserID = b.UserID)").Find(&messages)
@@ -214,7 +229,7 @@ func dbGetLastMessage(list *map[string]time.Time) {
 	}
 }
 
-func dbGetLastRespec(list *map[string]time.Time) {
+func dbGetLastRespecs(list *map[string]time.Time) {
 	var respec []Respec
 
 	err := engine.Alias("a").Select("a.GiverID , a.Time").Where("a.Time = (SELECT max(Time) From Respec b WHERE a.GiverID = b.GiverID)").Find(&respec)
@@ -228,7 +243,7 @@ func dbGetLastRespec(list *map[string]time.Time) {
 	}
 }
 
-func dbGetLastMention(list *map[string]time.Time) {
+func dbGetLastMentions(list *map[string]time.Time) {
 	var mention []Mention
 
 	err := engine.Alias("a").Select("a.ReceiverID , a.Time").Where("a.Time = (SELECT max(Time) From Mention b WHERE a.ReceiverID = b.ReceiverID)").Find(&mention)
@@ -239,6 +254,42 @@ func dbGetLastMention(list *map[string]time.Time) {
 
 	for _, v := range mention {
 		(*list)[v.ReceiverID] = v.Time
+	}
+}
+
+func dbGetLastReactionsAdded(list *map[reactionUsers]time.Time) {
+	var rm []joinReactionMessage
+
+	err := engine.Table("Reaction").Alias("r").Select("r.UserID, m.UserID, max(r.Time) AS Time").
+		Join("INNER", []string{"Message", "m"}, "r.MessageID = m.ID").
+		Where("r.Time = (SELECT max(Time) From Reaction b WHERE r.UserID = b.UserID AND m.ID = b.MessageID)").
+		GroupBy("r.UserID, m.UserID").
+		Find(&rm)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range rm {
+		(*list)[reactionUsers{v.Reaction.UserID, v.Message.UserID}] = v.Reaction.Time
+	}
+}
+
+func dbGetLastReactionsRemoved(list *map[reactionUsers]time.Time) {
+	var rm []joinReactionMessage
+
+	err := engine.Table("Reaction").Alias("r").Select("r.UserID, m.UserID, max(r.Removed) AS Removed").
+		Join("INNER", []string{"Message", "m"}, "r.MessageID = m.ID").
+		Where("r.Removed = (SELECT max(Removed) From Reaction b WHERE r.UserID = b.UserID AND m.ID = b.MessageID)").
+		GroupBy("r.UserID, m.UserID").
+		Find(&rm)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range rm {
+		(*list)[reactionUsers{v.Reaction.UserID, v.Message.UserID}] = v.Reaction.Removed
 	}
 }
 
