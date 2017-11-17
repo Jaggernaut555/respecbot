@@ -143,7 +143,13 @@ func respecTime(author *discordgo.User, message *discordgo.Message) (respec int)
 		if timeDelta.Seconds() < 2 {
 			respec -= smallValue
 		} else if timeDelta.Hours() > 6 {
+			available := dbGetUserRespec(author)
+
 			respec -= int(timeDelta.Hours()) * minValue
+
+			if respec+available < 0 {
+				respec = -available
+			}
 		}
 	}
 	return
