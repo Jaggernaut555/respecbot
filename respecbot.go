@@ -35,6 +35,8 @@ func init() {
 	purge := flag.Bool("purge", false, "Use this flag to purge the database. Must be used with -p")
 	flag.Parse()
 
+	log.SetOutput(os.Stdout)
+
 	Channels = map[string]bool{}
 	Servers = map[string]bool{}
 	InitDB()
