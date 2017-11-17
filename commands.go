@@ -39,6 +39,7 @@ func InitCmds() {
 		"respec":   CmdFuncHelpType{cmdRespec, "RESPEC", true},
 		"norespec": CmdFuncHelpType{cmdNoRespec, "NO RESPEC", true},
 		"stats":    CmdFuncHelpType{cmdStats, "Displays stats about this bot", true},
+		"bet":      CmdFuncHelpType{cmdBet, "WHO GONNA WIN? 'bet value @users", true},
 	}
 }
 
@@ -122,4 +123,8 @@ func cmdRespec(message *discordgo.MessageCreate, args []string) {
 func cmdNoRespec(message *discordgo.MessageCreate, args []string) {
 	// lose a user respec
 	GiveRespec(message, false)
+}
+
+func cmdBet(message *discordgo.MessageCreate, args []string) {
+	bet(message, args)
 }

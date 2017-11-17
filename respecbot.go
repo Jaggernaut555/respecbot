@@ -41,6 +41,7 @@ func init() {
 	InitRatings()
 	InitCmds()
 	InitRules()
+	InitBets()
 
 	if *purge {
 		if dbPassword != "" {
@@ -121,6 +122,6 @@ func isValidChannel(channelID string) bool {
 	return Channels[channelID]
 }
 
-func SendReply(channel string, reply string) {
-	DiscordSession.ChannelMessageSend(channel, reply)
+func SendReply(channelID string, reply string) {
+	DiscordSession.ChannelMessageSend(channelID, reply)
 }

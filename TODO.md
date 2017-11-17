@@ -3,3 +3,5 @@ More rules
 Rebalance respec values
 Use a rich embed maybe?
 Make setting users less bad
+
+tell a user they used respec wrong
