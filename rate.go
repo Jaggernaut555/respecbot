@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -36,7 +37,7 @@ func InitRatings() {
 
 	dbLoadRespec(&userRatings)
 
-	fmt.Println("loaded", len(userRatings), "ratings")
+	log.Println("loaded", len(userRatings), "ratings")
 
 	totalRespec = dbGetTotalRespec()
 }
@@ -71,13 +72,13 @@ func isNotALoser(guildID string, user *discordgo.User) {
 	DiscordSession.GuildMemberRoleRemove(guildID, user.ID, role.ID)
 }
 
-func addRespec(guildId string, user *discordgo.User, rating int) {
+func addRespec(guildID string, user *discordgo.User, rating int) {
 	temp := addRespecHelp(user, rating)
 
 	if temp < 0 {
-		isALoser(guildId, user)
+		isALoser(guildID, user)
 	} else if temp > 0 {
-		isNotALoser(guildId, user)
+		isNotALoser(guildID, user)
 	}
 }
 
@@ -87,7 +88,6 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 	newRespec := rating
 	if totalRespec != 0 && userRespec != 0 {
 		temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
-		//var temp = math.Abs(float64(userRespec)) / math.Abs(float64(totalRespec))
 		if temp > 0.15 {
 			temp = 0.15
 		} else if temp < 0.01 {
@@ -99,7 +99,7 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 	}
 
 	totalRespec += newRespec
-	fmt.Printf("%v %+d respec\n", user, newRespec)
+	log.Printf("%v %+d respec\n", user, newRespec)
 
 	dbGainRespec(user, newRespec)
 
@@ -127,7 +127,7 @@ func RespecMessage(message *discordgo.Message) {
 		return
 	}
 
-	fmt.Printf("%v: %v\n", author, message.ContentWithMentionsReplaced())
+	log.Printf("%v: %v\n", author, message.ContentWithMentionsReplaced())
 
 	numRespec += respecMentions(guild.ID, author, message)
 
@@ -147,14 +147,14 @@ func respecMentions(guildID string, author *discordgo.User, message *discordgo.M
 
 	for _, v := range users {
 		if v.ID == author.ID {
-			fmt.Println(author, "mentioned self")
+			log.Println(author, "mentioned self")
 			dbMention(author, v, message, -mentionValue, timeStamp)
 			respec -= mentionValue
 		} else if !canMention(v, timeStamp) {
-			fmt.Println(v, "mentioned by", author, "too soon since last mention")
+			log.Println(v, "mentioned by", author, "too soon since last mention")
 			dbMention(author, v, message, 0, timeStamp)
 		} else {
-			fmt.Println(v, "mentioned by", author)
+			log.Println(v, "mentioned by", author)
 			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
 		}
@@ -176,9 +176,9 @@ func canMention(user *discordgo.User, timeGiven time.Time) bool {
 }
 
 // gif someone respec
-func GiveRespec(message *discordgo.MessageCreate, positive bool) {
-	mentions := message.Message.Mentions
-	author := message.Message.Author
+func GiveRespec(message *discordgo.Message, positive bool) {
+	mentions := message.Mentions
+	author := message.Author
 	timeStamp, _ := message.Timestamp.Parse()
 	respec := dbGetUserRespec(author)
 	numRespec := 0
@@ -203,7 +203,7 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 
 	// lose respec if you use it wrong
 	if len(mentions) < 1 || !validGiveRespec(author, mentions, timeStamp) {
-		fmt.Println(author, "Used respec wrong")
+		log.Println(author, "Used respec wrong")
 		numRespec *= 2
 		addRespec(guild.ID, author, -numRespec)
 		dbGiveRespec(author, author, -numRespec, timeStamp)
@@ -214,7 +214,7 @@ func GiveRespec(message *discordgo.MessageCreate, positive bool) {
 	}
 
 	for _, v := range mentions {
-		fmt.Println(author, " gave respec to ", v)
+		log.Println(author, " gave respec to ", v)
 		addRespec(guild.ID, v, numRespec)
 		dbGiveRespec(author, v, numRespec, timeStamp)
 	}
@@ -271,7 +271,7 @@ func RespecReactionAdd(reaction *discordgo.MessageReaction) {
 		addRespec(guild.ID, author, reactionValue)
 	}
 
-	fmt.Printf("%v got a reaction from %v\n", author, user)
+	log.Printf("%v got a reaction from %v\n", author, user)
 
 	dbReactionAdd(user, reaction, timeStamp)
 }
@@ -304,9 +304,9 @@ func RespecReactionRemove(reaction *discordgo.MessageReaction) {
 		addRespec(guild.ID, author, -reactionValue)
 	}
 
-	fmt.Printf("%v lost a reaction\n", author)
+	log.Printf("%v lost a reaction\n", author)
 
-	fmt.Printf("%v removed a reaction\n", user)
+	log.Printf("%v removed a reaction\n", user)
 	addRespec(guild.ID, user, -reactionValue)
 	dbReactionRemove(user, reaction, timeStamp)
 }

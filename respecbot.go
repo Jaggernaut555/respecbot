@@ -57,7 +57,7 @@ func init() {
 }
 
 func main() {
-	fmt.Println("TIME TO RESPEC...")
+	log.Println("TIME TO RESPEC...")
 
 	if discordToken == "" {
 		log.Println("You must provide a Discord authentication token (-t)")
@@ -82,7 +82,7 @@ func main() {
 		return
 	}
 
-	fmt.Println("Bot is now running. Press CTRL-C to exit.")
+	log.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc

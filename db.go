@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -48,6 +48,22 @@ type Mention struct {
 	Respec     int       `xorm:"default 0"`
 }
 
+/*
+type Bet struct {
+	ID         uint64    `xorm:"pk autoincr"`
+	StarterID    string    `xorm:"not null"`
+	Winner     string    `xorm:"default null"`
+	Respec     int       `xorm:"default 0"`
+	Time       time.Time `xorm:"not null"`
+}
+
+// ID = Bet.ID, table to hold all users who participated in a bet
+type BetUsers struct {
+	ID uint64 `xorm:"pk"`
+	UserID uint64 `xorm:"pk"`
+}
+*/
+
 type joinReactionMessage struct {
 	Reaction `xorm:"extends"`
 	Message  `xorm:"extends"`
@@ -69,7 +85,7 @@ func InitDB() {
 
 	createTables(engine)
 
-	fmt.Println("Database running")
+	log.Println("Database running")
 }
 
 func createTables(e *xorm.Engine) {

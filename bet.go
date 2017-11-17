@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,10 +22,12 @@ type Bet struct {
 	started     bool
 	open        bool
 	author      *discordgo.User
-	userStatus  map[*discordgo.User]bool
+	userStatus  map[string]bool
+	users       map[string]*discordgo.User
 	state       chan betMessage
 	time        time.Time
 	channelID   string
+	guildID     string
 }
 
 var (
@@ -37,7 +40,7 @@ func InitBets() {
 	betMuxes = make(map[string]*sync.Mutex)
 }
 
-func bet(message *discordgo.MessageCreate, args []string) {
+func bet(message *discordgo.Message, args []string) {
 	/*
 		format
 		bet 50 @user1 @user2 ... (must have enough score, cap of 50?)
@@ -49,11 +52,25 @@ func bet(message *discordgo.MessageCreate, args []string) {
 		One active bet per channel
 	*/
 	channelID := message.ChannelID
+	channel, err := DiscordSession.Channel(channelID)
+	if err != nil {
+		panic(err)
+	}
 	author := message.Author
 	mentions := message.Mentions
 
-	if len(args) < 2 {
-		fmt.Println("Bet Used Wrong")
+	if len(args) < 2 || args[1] == "help" {
+		reply := "```"
+		reply += "-Make a wager with\n'[value] @[users/roles/everyone/EMPTY]...'\n"
+		reply += "No target is the same as @everyone\n"
+		reply += "-Respond with 'call'\n"
+		reply += "-To drop out before bet starts use 'drop'\n"
+		reply += "-Lose with 'lose'\n"
+		reply += "-To start a bet early use 'start', otherwise it will start 2 minutes after it's made\n"
+		reply += "-To cancel the whole bet use 'cancel'\n"
+		reply += "-Only the bet creator can start/cancel the bet"
+		reply += "```"
+		SendReply(channelID, reply)
 		return
 	}
 
@@ -69,7 +86,7 @@ func bet(message *discordgo.MessageCreate, args []string) {
 	if b, ok := allBets[channelID]; ok {
 		// bet exists, check if user is active or able to join
 
-		userStatus, ok := b.userStatus[author]
+		userStatus, ok := b.userStatus[author.ID]
 
 		if !ok {
 			ok = b.open
@@ -79,7 +96,7 @@ func bet(message *discordgo.MessageCreate, args []string) {
 
 		// begin bet with current active users
 		case "start":
-			if author == b.author && !b.started {
+			if author.ID == b.author.ID && !b.started {
 				b.state <- betMessage{user: author, arg: "start"}
 			}
 
@@ -89,49 +106,68 @@ func bet(message *discordgo.MessageCreate, args []string) {
 				b.state <- betMessage{user: author, arg: "lose"}
 			}
 
-		// validate user can accept
-		case "accept":
+		// drop a bet before it starts
+		case "drop":
+			if userStatus && ok && !b.started {
+				b.state <- betMessage{user: author, arg: "drop"}
+			}
+
+		// validate user can call
+		case "call":
 			if !userStatus && ok && !b.started {
-				b.state <- betMessage{user: author, arg: "accept"}
+				available := dbGetUserRespec(author)
+				if available >= b.respec {
+					b.state <- betMessage{user: author, arg: "call"}
+				}
 			}
 
 		// cannot cancel started bet
 		case "cancel":
-			if author == b.author && !b.started {
-				close(b.state)
+			if author.ID == b.author.ID {
+				b.state <- betMessage{user: author, arg: "cancel"}
 			}
 
 		default:
-			reply := fmt.Sprintf("Not a valid command for active bet, %v", author.Mention())
+			reply := fmt.Sprintf("Not a valid for active bet, use call/lose/start/cancel")
 			SendReply(channelID, reply)
 		}
 	} else {
 		// bet does not exist, check if valid bet then create it
 		// validate user has enough respec to create bet
+		available := dbGetUserRespec(author)
 		num, err := strconv.Atoi(args[1])
-		if err != nil {
-			reply := fmt.Sprintf("%v did not specify bet amount", author.Mention())
+		if err != nil || num < 1 || available < num {
+			reply := fmt.Sprintf("Invalid wager")
 			SendReply(channelID, reply)
 			return
 		}
 
 		var b Bet
-		b.userStatus = make(map[*discordgo.User]bool)
-		b.respec = num
-		b.totalRespec = num
-		b.state = make(chan betMessage)
+		b.author = author
+		b.channelID = channelID
+		b.guildID = channel.GuildID
 		b.open = message.MentionEveryone
+		b.respec = num
+		b.state = make(chan betMessage, 5)
 		b.time = time.Now()
+		b.users = make(map[string]*discordgo.User)
+		b.userStatus = make(map[string]bool)
 
 		if len(args) == 2 {
 			b.open = true
 		} else {
 			// check if role mentioned
+			appendRoles(message, &b)
+
 			for _, v := range mentions {
-				b.userStatus[v] = true
+				b.userStatus[v.ID] = false
+				b.users[v.ID] = v
 			}
-			b.userStatus[author] = true
 		}
+
+		b.userStatus[author.ID] = true
+		b.users[author.ID] = author
+		addRespec(b.guildID, b.author, -b.respec)
 
 		if mux != betMuxes[channelID] {
 			mux.Unlock()
@@ -141,93 +177,219 @@ func bet(message *discordgo.MessageCreate, args []string) {
 		allBets[channelID] = &b
 
 		go betEngage(b.state, &b, mux)
+		go startBetTimer(b.state)
 
-		reply := fmt.Sprintf("%v started a bet for %v", author.Mention(), b.respec)
+		reply := fmt.Sprintf("%v started a bet of %v", author.Mention(), b.respec)
 		SendReply(channelID, reply)
-		reply = fmt.Sprintf("%v started a bet for %v", author.String(), b.respec)
-		fmt.Println(reply)
+		reply = fmt.Sprintf("%v started a bet of %v", author.String(), b.respec)
+		log.Println(reply)
 	}
 
 	mux.Unlock()
 }
 
+func startBetTimer(c chan betMessage) {
+	timer := time.NewTicker(time.Minute * 2)
+	<-timer.C
+	c <- betMessage{user: nil, arg: "start"}
+}
+
+func appendRoles(message *discordgo.Message, b *Bet) {
+	channel, err := DiscordSession.Channel(message.ChannelID)
+	if err != nil {
+		panic(err)
+	}
+	mentionedRoles := message.MentionRoles
+	var roleUsers []*discordgo.User
+
+	guild, _ := DiscordSession.Guild(channel.GuildID)
+
+	for _, v := range mentionedRoles {
+		roleUsers = append(roleUsers, roleHelper(guild, v)...)
+	}
+
+	for _, v := range roleUsers {
+		b.users[v.ID] = v
+		b.userStatus[v.ID] = false
+	}
+}
+
+func roleHelper(guild *discordgo.Guild, roleID string) (users []*discordgo.User) {
+	members := guild.Members
+	for _, v := range members {
+		for _, role := range v.Roles {
+			if roleID == role {
+				users = append(users, v.User)
+				break
+			}
+		}
+	}
+	return
+}
+
 // goroutine to run an active bet
 func betEngage(c chan betMessage, b *Bet, mux *sync.Mutex) {
-	var winner *discordgo.User
+	var winnerID string
 	for i := range c {
 		mux.Lock()
 		switch i.arg {
-		case "accept":
-			b.userStatus[i.user] = true
-			fmt.Printf("%+v\n", i)
+		case "call":
+			callBet(b, i.user)
 		case "lose":
-			b.userStatus[i.user] = false
-			fmt.Printf("%+v\n", i)
+			loseBet(b, i.user)
+		case "drop":
+			dropOut(b, i.user)
 		case "start":
-			fmt.Println("Bet Started")
 			startBet(b)
 		case "cancel":
-			fmt.Println("Bet Cancelled")
+			cancelBet(b)
 			break
 		}
 
-		if !b.started {
+		if !b.started && !b.open {
 			if checkBetReady(b.userStatus) {
 				startBet(b)
 			}
-		} else {
+		}
+		if b.started {
 			var ok bool
-			if winner, ok = checkWinner(b.userStatus); ok {
+			if winnerID, ok = checkWinner(b.userStatus); ok {
 				break
+			} else {
+				reply := "Active Betters: "
+				for k, v := range b.userStatus {
+					if v {
+						reply += b.users[k].Mention()
+					}
+				}
+				SendReply(b.channelID, reply)
 			}
 		}
 		mux.Unlock()
 	}
-	mux.Lock()
-	delete(allBets, b.channelID)
-	mux.Unlock()
 
 	var reply string
-	if winner != nil {
-		reply = fmt.Sprintf("%v won %v respec", winner.Mention(), b.totalRespec)
-		fmt.Printf("%v won %v respec\n", winner.String(), b.totalRespec)
+
+	if winner, ok := b.users[winnerID]; ok {
+		betWon(b, winner)
+		reply = fmt.Sprintf("Bet ended. %v won %v respec", winner.Mention(), b.totalRespec-b.respec)
+		log.Printf("Bet ended. %v won %v respec\n", winner.String(), b.totalRespec-b.respec)
 	} else {
-		reply = fmt.Sprintf("No winner, repsec refunded")
-		fmt.Println(reply)
+		reply = fmt.Sprintf("Bet ended. No winner, repsec refunded")
+		log.Println(reply)
 	}
 
 	SendReply(b.channelID, reply)
-	fmt.Println("Bet ended")
+
+	delete(allBets, b.channelID)
+	mux.Unlock()
+}
+
+func betWon(b *Bet, winner *discordgo.User) {
+	addRespec(b.guildID, winner, b.totalRespec)
+
+	for _, v := range b.users {
+		if v.ID != winner.ID {
+			addRespec(b.guildID, v, -b.respec)
+		}
+	}
+}
+
+func cancelBet(b *Bet) {
+	for k, v := range b.userStatus {
+		if v {
+			addRespec(b.guildID, b.users[k], b.respec)
+		}
+	}
+
+	reply := fmt.Sprintf("Bet Cancelled")
+
+	SendReply(b.channelID, reply)
+	log.Println(reply)
+}
+
+func callBet(b *Bet, user *discordgo.User) {
+	if b.userStatus[user.ID] {
+		return
+	}
+	b.userStatus[user.ID] = true
+	b.users[user.ID] = user
+
+	log.Printf("%+v called\n", user.String())
+
+	addRespec(b.guildID, user, -b.respec)
+}
+
+func loseBet(b *Bet, user *discordgo.User) {
+	if !b.userStatus[user.ID] {
+		return
+	}
+	b.userStatus[user.ID] = false
+
+	log.Printf("%+v lost\n", user.String())
+}
+
+func dropOut(b *Bet, user *discordgo.User) {
+	if !b.userStatus[user.ID] {
+		return
+	}
+	b.userStatus[user.ID] = false
+
+	log.Printf("%+v dropped out\n", user.String())
+
+	addRespec(b.guildID, user, b.respec)
 }
 
 func startBet(b *Bet) {
 	if b.started {
 		return
 	}
+	count := 0
 	for k, v := range b.userStatus {
 		if !v {
 			delete(b.userStatus, k)
+			delete(b.users, k)
+		} else {
+			b.totalRespec += b.respec
+			count++
 		}
 	}
+	if count == 0 {
+		b.state <- betMessage{user: nil, arg: "cancel"}
+		return
+	}
 	b.started = true
+	go betEndTimer(b.state)
+	reply := fmt.Sprintf("Bet started: must end before %v", time.Now().Add(time.Minute*30).Format("15:04:05"))
+	SendReply(b.channelID, reply)
+	log.Println(reply)
+}
+
+func betEndTimer(c chan betMessage) {
+	timer := time.NewTicker(time.Minute * 30)
+	<-timer.C
+	c <- betMessage{user: nil, arg: "cancel"}
 }
 
 // check if only one user has not lost the bet
-func checkWinner(users map[*discordgo.User]bool) (winner *discordgo.User, won bool) {
+func checkWinner(userstatus map[string]bool) (winner string, won bool) {
 	count := 0
-	for k, v := range users {
+	for k, v := range userstatus {
 		if v {
 			winner = k
 			count++
 		}
 		if count > 1 {
-			return nil, false
+			return "", false
 		}
+	}
+	if count == 0 {
+		return "", true
 	}
 	return winner, true
 }
 
-func checkBetReady(users map[*discordgo.User]bool) bool {
+func checkBetReady(users map[string]bool) bool {
 	for _, v := range users {
 		if !v {
 			return false
@@ -236,7 +398,4 @@ func checkBetReady(users map[*discordgo.User]bool) bool {
 	return true
 }
 
-// make @role to return a list of all users of that role
-// make timer to auto start bet after x time
-// make timer to end bet after x time
 // multiple pot winners?
