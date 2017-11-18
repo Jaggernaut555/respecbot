@@ -54,13 +54,15 @@ func bet(message *discordgo.Message, args []string) {
 
 	if len(args) < 2 || args[1] == "help" {
 		reply := "```"
-		reply += "-Make a wager with\n'[value] @[users/roles/everyone/EMPTY]...'\n"
-		reply += "No target is the same as @everyone\n"
-		reply += "-Respond with 'call'\n"
-		reply += "-To drop out of a bet use 'drop'\n"
-		reply += "-To start a bet early use 'start', otherwise it will start 2 minutes after it's made\n"
-		reply += "-To cancel the whole bet use 'cancel'\n"
-		reply += "-Only the bet creator can start/cancel the bet"
+		reply += "'bet help' - display this message\n"
+		reply += "'bet [value] [@user/role/everyone] - create a bet\n"
+		reply += "(No target is the same as @everyone)\n"
+		reply += "'bet call' - Call the active bet\n"
+		reply += "'bet drop' - Drop out of a bet\n"
+		reply += "'bet lose' - Lose the bet"
+		reply += "'bet start' - Start a bet early, otherwise it will start 2 minutes after it's made or when every target in the bet is ready\n"
+		reply += "'bet cancel' - Cancel the active bet\n"
+		reply += "(Only the bet creator can start/cancel the bet)"
 		reply += "```"
 		SendReply(message.ChannelID, reply)
 		return
@@ -109,8 +111,12 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 
 	// drop a bet before it starts
 	case "drop":
-		if userStatus && ok && !b.started {
-			b.state <- betMessage{user: author, arg: "drop"}
+		if userStatus && ok {
+			if b.started {
+				b.state <- betMessage{user: author, arg: "lose"}
+			} else {
+				b.state <- betMessage{user: author, arg: "drop"}
+			}
 		}
 
 	// validate user can call
@@ -267,7 +273,7 @@ Loop:
 				reply := "Active Betters: "
 				for k, v := range b.userStatus {
 					if v {
-						reply += b.users[k].Mention()
+						reply += b.users[k].Mention() + " "
 					}
 				}
 				SendReply(b.channelID, reply)
@@ -370,7 +376,7 @@ func startBet(b *Bet) {
 	}
 	b.started = true
 	go betEndTimer(b.state)
-	reply := fmt.Sprintf("Bet started: must end before %v", time.Now().Add(time.Minute*30).Format("15:04:05"))
+	reply := fmt.Sprintf("Bet started: must end before %v. Pot of %v", time.Now().Add(time.Minute*30).Format("15:04:05"), b.totalRespec)
 	SendReply(b.channelID, reply)
 	log.Println(reply)
 }
