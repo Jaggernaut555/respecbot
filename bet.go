@@ -262,7 +262,7 @@ Loop:
 		if b.started {
 			var ok bool
 			if winnerID, ok = checkWinner(b.userStatus); ok {
-				break
+				break Loop
 			} else {
 				reply := "Active Betters: "
 				for k, v := range b.userStatus {
@@ -271,7 +271,6 @@ Loop:
 					}
 				}
 				SendReply(b.channelID, reply)
-				break Loop
 			}
 		}
 		mux.Unlock()
