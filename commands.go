@@ -95,6 +95,7 @@ func cmdHere(message *discordgo.MessageCreate, args []string) {
 	Channels[channel.ID] = true
 	Servers[channel.GuildID] = true
 	SendReply(channel.ID, "Fuck on me")
+	loserCheck(channel.GuildID)
 }
 
 func cmdNotHere(message *discordgo.MessageCreate, args []string) {

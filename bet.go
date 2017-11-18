@@ -17,27 +17,35 @@ type betMessage struct {
 }
 
 type Bet struct {
-	respec      int
-	totalRespec int
-	started     bool
-	open        bool
-	author      *discordgo.User
-	userStatus  map[string]bool
-	users       map[string]*discordgo.User
-	state       chan betMessage
-	time        time.Time
-	channelID   string
-	guildID     string
+	respec       int
+	totalRespec  int
+	started      bool
+	open         bool
+	author       *discordgo.User
+	userStatus   map[string]bool
+	users        map[string]*discordgo.User
+	state        chan betMessage
+	time         time.Time
+	endTime      time.Time
+	channelID    string
+	guildID      string
+	announcement *discordgo.Message
 }
 
 var (
 	allBets  map[string]*Bet
 	betMuxes map[string]*sync.Mutex
+	location *time.Location
 )
 
 func InitBets() {
 	allBets = make(map[string]*Bet)
 	betMuxes = make(map[string]*sync.Mutex)
+	var err error
+	location, err = time.LoadLocation("America/Vancouver")
+	if err != nil {
+		panic(err)
+	}
 }
 
 func bet(message *discordgo.Message, args []string) {
@@ -164,8 +172,9 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 	b.guildID = channel.GuildID
 	b.open = message.MentionEveryone
 	b.respec = num
+	b.totalRespec = num
 	b.state = make(chan betMessage, 5)
-	b.time = time.Now()
+	b.time = time.Now().In(location)
 	b.users = make(map[string]*discordgo.User)
 	b.userStatus = make(map[string]bool)
 
@@ -177,9 +186,17 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 		appendRoles(message, &b)
 
 		for _, v := range message.Mentions {
-			b.userStatus[v.ID] = false
-			b.users[v.ID] = v
+			if userCanBet(v, b.respec) {
+				b.userStatus[v.ID] = false
+				b.users[v.ID] = v
+			}
 		}
+	}
+
+	if len(b.users) < 1 && !b.open {
+		reply := "No users can participate in this bet"
+		SendReply(b.channelID, reply)
+		return
 	}
 
 	b.userStatus[author.ID] = true
@@ -195,9 +212,7 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 	go betEngage(b.state, &b, mux)
 	go startBetTimer(b.state)
 
-	reply := fmt.Sprintf("%v started a bet of %v", author.Mention(), b.respec)
-	SendReply(message.ChannelID, reply)
-	reply = fmt.Sprintf("%v started a bet of %v", author.String(), b.respec)
+	reply := fmt.Sprintf("%v started a bet of %v", author.String(), b.respec)
 	log.Println(reply)
 }
 
@@ -218,7 +233,7 @@ func appendRoles(message *discordgo.Message, b *Bet) {
 	guild, _ := DiscordSession.Guild(channel.GuildID)
 
 	for _, v := range mentionedRoles {
-		roleUsers = append(roleUsers, roleHelper(guild, v)...)
+		roleUsers = append(roleUsers, roleHelper(guild, v, b.respec)...)
 	}
 
 	for _, v := range roleUsers {
@@ -227,22 +242,32 @@ func appendRoles(message *discordgo.Message, b *Bet) {
 	}
 }
 
-func roleHelper(guild *discordgo.Guild, roleID string) (users []*discordgo.User) {
+func roleHelper(guild *discordgo.Guild, roleID string, respecNeeded int) (users []*discordgo.User) {
 	members := guild.Members
 	for _, v := range members {
 		for _, role := range v.Roles {
 			if roleID == role {
-				users = append(users, v.User)
-				break
+				if userCanBet(v.User, respecNeeded) {
+					users = append(users, v.User)
+					break
+				}
 			}
 		}
 	}
 	return
 }
 
+func userCanBet(user *discordgo.User, respecNeeded int) bool {
+	if available := dbGetUserRespec(user); available >= respecNeeded {
+		return true
+	}
+	return false
+}
+
 // goroutine to run an active bet
 func betEngage(c chan betMessage, b *Bet, mux *sync.Mutex) {
 	var winnerID string
+	activeBetEmbed(b)
 
 Loop:
 	for i := range c {
@@ -264,36 +289,27 @@ Loop:
 			if checkBetReady(b.userStatus) {
 				startBet(b)
 			}
+			activeBetEmbed(b)
 		}
 		if b.started {
 			var ok bool
 			if winnerID, ok = checkWinner(b.userStatus); ok {
 				break Loop
 			} else {
-				reply := "Active Betters: "
-				for k, v := range b.userStatus {
-					if v {
-						reply += b.users[k].Mention() + " "
-					}
-				}
-				SendReply(b.channelID, reply)
+				activeBetEmbed(b)
 			}
 		}
 		mux.Unlock()
 	}
 
-	var reply string
-
-	if winner, ok := b.users[winnerID]; ok {
+	if winner, ok := b.users[winnerID]; ok && len(b.users) > 1 {
 		betWon(b, winner)
-		reply = fmt.Sprintf("Bet ended. %v won %v respec", winner.Mention(), b.totalRespec-b.respec)
 		log.Printf("Bet ended. %v won %v respec\n", winner.String(), b.totalRespec-b.respec)
+		winnerCard(b, winner)
 	} else {
-		reply = fmt.Sprintf("Bet ended. No winner, repsec refunded")
-		log.Println(reply)
+		deleteEmbed(b)
+		log.Println("Bet ended. No winner, repsec refunded")
 	}
-
-	SendReply(b.channelID, reply)
 
 	delete(allBets, b.channelID)
 	mux.Unlock()
@@ -305,6 +321,7 @@ func callBet(b *Bet, user *discordgo.User) {
 	}
 	b.userStatus[user.ID] = true
 	b.users[user.ID] = user
+	b.totalRespec += b.respec
 
 	log.Printf("%+v called\n", user.String())
 
@@ -325,6 +342,7 @@ func dropOut(b *Bet, user *discordgo.User) {
 		return
 	}
 	b.userStatus[user.ID] = false
+	b.totalRespec -= b.respec
 
 	log.Printf("%+v dropped out\n", user.String())
 
@@ -349,7 +367,7 @@ func cancelBet(b *Bet) {
 		}
 	}
 
-	reply := fmt.Sprintf("Bet Cancelled")
+	reply := fmt.Sprintf("Bet Cancelled, respec refunded")
 
 	b.started = true
 	SendReply(b.channelID, reply)
@@ -360,25 +378,38 @@ func startBet(b *Bet) {
 	if b.started {
 		return
 	}
+	b.started = true
 	count := 0
 	for k, v := range b.userStatus {
 		if !v {
 			delete(b.userStatus, k)
 			delete(b.users, k)
 		} else {
-			b.totalRespec += b.respec
 			count++
 		}
 	}
-	if count == 0 {
+	if count < 2 {
 		b.state <- betMessage{user: nil, arg: "cancel"}
+		reply := "Not enough users entered the bet"
+		SendReply(b.channelID, reply)
+		log.Println(reply)
 		return
 	}
-	b.started = true
 	go betEndTimer(b.state)
-	reply := fmt.Sprintf("Bet started: must end before %v. Pot of %v", time.Now().Add(time.Minute*30).Format("15:04:05"), b.totalRespec)
-	SendReply(b.channelID, reply)
+	b.endTime = b.time.Add(time.Minute * 30)
+	timeStamp := fmt.Sprintf(b.endTime.Format("15:04:05"))
+	reply := fmt.Sprintf("Bet started: Total pot:%v Must end before %v.", b.totalRespec, timeStamp)
+
 	log.Println(reply)
+}
+
+func checkBetReady(users map[string]bool) bool {
+	for _, v := range users {
+		if !v {
+			return false
+		}
+	}
+	return true
 }
 
 func betEndTimer(c chan betMessage) {
@@ -405,13 +436,88 @@ func checkWinner(userstatus map[string]bool) (winner string, won bool) {
 	return winner, true
 }
 
-func checkBetReady(users map[string]bool) bool {
-	for _, v := range users {
-		if !v {
-			return false
+func activeBetEmbed(b *Bet) {
+	embed := new(discordgo.MessageEmbed)
+	embed.Footer = new(discordgo.MessageEmbedFooter)
+	embed.Thumbnail = new(discordgo.MessageEmbedThumbnail)
+	var title string
+
+	if b.started {
+		title += "Bet Started"
+		embed.Footer.Text = fmt.Sprintf("Bet ends at %v", b.endTime.Format("15:04:05"))
+
+	} else {
+		title += "Bet Not Started"
+		if b.open {
+			title += " (ANYONE CAN JOIN)"
 		}
+		embed.Footer.Text = fmt.Sprintf("Bet starts at %v", b.time.Add(time.Minute*2).Format("15:04:05"))
 	}
-	return true
+
+	embed.Title = title
+	embed.Description = fmt.Sprintf("Total Pot: %v", b.totalRespec)
+	embed.URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+	embed.Thumbnail.URL = "https://i.imgur.com/aUeMzFC.png"
+	embed.Type = "rich"
+
+	for k, v := range b.users {
+		field := new(discordgo.MessageEmbedField)
+		field.Inline = true
+		field.Name = v.Username
+		if b.userStatus[k] {
+			field.Value = "in"
+		} else {
+			field.Value = "out"
+		}
+		embed.Fields = append(embed.Fields, field)
+	}
+
+	msg := SendEmbed(b.channelID, embed)
+
+	if b.announcement != nil {
+		deleteEmbed(b)
+	}
+
+	b.announcement = msg
+}
+
+func deleteEmbed(b *Bet) {
+	DiscordSession.ChannelMessageDelete(b.announcement.ChannelID, b.announcement.ID)
+}
+
+func winnerCard(b *Bet, winner *discordgo.User) {
+	embed := new(discordgo.MessageEmbed)
+	embed.Footer = new(discordgo.MessageEmbedFooter)
+	embed.Thumbnail = new(discordgo.MessageEmbedThumbnail)
+
+	title := fmt.Sprintf("%v won %v respec", winner.Username, b.totalRespec-b.respec)
+
+	embed.Title = title
+	embed.Description = fmt.Sprintf("Total Pot: %v", b.totalRespec)
+	embed.URL = "https://www.youtube.com/watch?v=1EKTw50Uf8M"
+	embed.Thumbnail.URL = "https://i.imgur.com/5Gwne2N.png"
+	embed.Type = "rich"
+	embed.Footer.Text = fmt.Sprintf("Bet ended at %v", time.Now().In(location).Format("15:04:05"))
+
+	for k, v := range b.users {
+		field := new(discordgo.MessageEmbedField)
+		field.Inline = true
+		field.Name = v.Username
+		if b.userStatus[k] {
+			field.Value = "WINNER"
+		} else {
+			field.Value = "LOSER"
+		}
+		embed.Fields = append(embed.Fields, field)
+	}
+
+	msg := SendEmbed(b.channelID, embed)
+
+	if b.announcement != nil {
+		deleteEmbed(b)
+	}
+
+	b.announcement = msg
 }
 
 // multiple pot winners?

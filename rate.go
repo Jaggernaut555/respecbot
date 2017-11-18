@@ -42,6 +42,21 @@ func InitRatings() {
 	totalRespec = dbGetTotalRespec()
 }
 
+func loserCheck(guildID string) {
+	guild, err := DiscordSession.Guild(guildID)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range guild.Members {
+		if dbGetUserRespec(v.User) < 0 {
+			isALoser(guildID, v.User)
+		} else {
+			isNotALoser(guildID, v.User)
+		}
+	}
+}
+
 func isALoser(guildID string, user *discordgo.User) {
 	roles, _ := DiscordSession.GuildRoles(guildID)
 	var role *discordgo.Role
@@ -86,16 +101,22 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 	// abs(userRating) / abs(totalRespec)
 	userRespec := dbGetUserRespec(user)
 	newRespec := rating
-	if totalRespec != 0 && userRespec != 0 {
-		temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
-		if temp > 0.15 {
-			temp = 0.15
-		} else if temp < 0.01 {
-			temp = 0.01
-		}
-		if rand.Float64() < temp {
-			newRespec = -newRespec
-		}
+
+	if totalRespec == 0 {
+		totalRespec = 1
+	}
+	if userRespec == 0 {
+		userRespec = 1
+	}
+
+	temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
+	if temp > 0.15 {
+		temp = 0.15
+	} else if temp < 0.01 {
+		temp = 0.01
+	}
+	if rand.Float64() < temp {
+		newRespec = -newRespec
 	}
 
 	totalRespec += newRespec

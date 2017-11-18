@@ -127,3 +127,8 @@ func isValidChannel(channelID string) bool {
 func SendReply(channelID string, reply string) {
 	DiscordSession.ChannelMessageSend(channelID, reply)
 }
+
+func SendEmbed(channelID string, embed *discordgo.MessageEmbed) (msg *discordgo.Message) {
+	msg, _ = DiscordSession.ChannelMessageSendEmbed(channelID, embed)
+	return
+}
