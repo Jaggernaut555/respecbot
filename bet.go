@@ -59,7 +59,7 @@ func bet(message *discordgo.Message, args []string) {
 		reply += "(No target is the same as @everyone)\n"
 		reply += "'bet call' - Call the active bet\n"
 		reply += "'bet drop' - Drop out of a bet\n"
-		reply += "'bet lose' - Lose the bet"
+		reply += "'bet lose' - Lose the bet\n"
 		reply += "'bet start' - Start a bet early, otherwise it will start 2 minutes after it's made or when every target in the bet is ready\n"
 		reply += "'bet cancel' - Cancel the active bet\n"
 		reply += "(Only the bet creator can start/cancel the bet)"
