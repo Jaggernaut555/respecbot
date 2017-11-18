@@ -443,11 +443,11 @@ func activeBetEmbed(b *Bet) {
 	var title string
 
 	if b.started {
-		title += "Bet Started"
+		title = fmt.Sprintf("Bet (%v) Started", b.respec)
 		embed.Footer.Text = fmt.Sprintf("Bet ends at %v", b.endTime.Format("15:04:05"))
 
 	} else {
-		title += "Bet Not Started"
+		title = fmt.Sprintf("Bet (%v) Not Started", b.respec)
 		if b.open {
 			title += " (ANYONE CAN JOIN)"
 		}
