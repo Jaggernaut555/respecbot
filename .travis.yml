@@ -10,5 +10,8 @@ install:
 script:
   - go build -v
 
-after_deploy:
-  - "curl -H 'Content-Type: application/json' -X POST -d '{\"token\":\"$DEPLOY_TOKEN\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
+deploy:
+  provider: script
+  script: scripts/deploy.sh
+  on:
+    branch: master
