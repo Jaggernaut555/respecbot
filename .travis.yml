@@ -7,20 +7,11 @@ before_script: go get -t ./...
 
 script: go build -v
 
-jobs:
-  include:
-    - stage: deploy
-      script: skip
-      deploy:
-        provider: script
-        script: sh $TRAVIS_BUILD_DIR/scripts/deploy.sh
-        on:
-          branch: master
+after_success:
+  - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"$DEPLOY_TOKEN\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
 
 stages:
   - test
-  - name: deploy
-    if: branch = master
 
 notifications:
   email:
