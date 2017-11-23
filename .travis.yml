@@ -1,25 +1,24 @@
 language: go
 
-install:
-  - go get -t ./...
+go:
+  - 1.9
+
+before_script: go get -t ./...
+
+script: go build -v
 
 jobs:
   include:
-    - stage: compile
-      go:
-        - 1.9
-        - master
-      script: go build -v
     - stage: deploy
-      go: 1.9
+      script: skip
       deploy:
         provider: script
-        script: scripts/deploy.sh
+        script: sh $TRAVIS_BUILD_DIR/scripts/deploy.sh
         on:
           branch: master
 
 stages:
-  - compile
+  - test
   - name: deploy
     if: branch = master
 
@@ -27,3 +26,4 @@ notifications:
   email:
     on_success: never
     on_failure: always
+    on_error: always

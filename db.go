@@ -63,7 +63,7 @@ func (*DBBet) TableName() string {
 // ID = Bet.ID, table to hold all users who participated in a bet
 type BetUsers struct {
 	BetID  uint64 `xorm:"pk"`
-	UserID string `xorm:"pk"`
+	UserID string `xorm:"varchar(50) pk"`
 }
 
 type joinReactionMessage struct {
