@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -26,29 +25,46 @@ const (
 	mentionValue      = 3
 )
 
+const (
+	badChange  = iota
+	noChange   = iota
+	goodChange = iota
+)
+
 var (
-	totalRespec int
+	totalRespec  int
+	supremeRuler map[string]string
+	loserRoleID  map[string]string
+	rulerRoleID  map[string]string
 )
 
 func InitRatings() {
 	userRatings := make(map[string]int)
+	supremeRuler = make(map[string]string)
+	loserRoleID = make(map[string]string)
+	rulerRoleID = make(map[string]string)
 
 	rand.Seed(time.Now().Unix())
 
 	dbLoadRespec(&userRatings)
 
-	log.Println("loaded", len(userRatings), "ratings")
+	Log(fmt.Sprintf("loaded %v ratings", len(userRatings)))
 
 	totalRespec = dbGetTotalRespec()
 }
 
-func loserCheck(guildID string) {
+func initLosers(guildID string) {
 	guild, err := DiscordSession.Guild(guildID)
 	if err != nil {
 		panic(err)
 	}
 
+	loserRoleID[guildID] = getRoleID(guildID, "Losers")
+
 	for _, v := range guild.Members {
+		if isBot(v.User) {
+			continue
+		}
 		if dbGetUserRespec(v.User) < 0 {
 			isALoser(guildID, v.User)
 		} else {
@@ -57,44 +73,101 @@ func loserCheck(guildID string) {
 	}
 }
 
-func isALoser(guildID string, user *discordgo.User) {
-	roles, _ := DiscordSession.GuildRoles(guildID)
-	var role *discordgo.Role
-	for _, v := range roles {
-		if v.Name == "Losers" {
-			role = v
-			break
-		}
+func initTopUser(guildID string) {
+	guild, err := DiscordSession.Guild(guildID)
+	if err != nil {
+		panic(err)
 	}
-	if role == nil {
+
+	roleID := getRoleID(guildID, "Supreme Ruler")
+	if roleID == "" {
 		return
 	}
-	DiscordSession.GuildMemberRoleAdd(guildID, user.ID, role.ID)
+
+	rulerRoleID[guildID] = roleID
+
+	userID := dbGetTopUser()
+
+	for _, v := range guild.Members {
+		if isBot(v.User) {
+			continue
+		}
+		if v.User.ID == userID {
+			continue
+		}
+		DiscordSession.GuildMemberRoleRemove(guildID, v.User.ID, roleID)
+	}
+
+	if userID == "" {
+		return
+	}
+
+	err = DiscordSession.GuildMemberRoleAdd(guildID, userID, roleID)
+	if err == nil {
+		supremeRuler[guildID] = userID
+	}
+}
+
+func checkTopUser(guildID string, user *discordgo.User) {
+	roleID, ok := rulerRoleID[guildID]
+	if !ok {
+		return
+	}
+	oldUser, ok := supremeRuler[guildID]
+	if dbUserIsTop(user) && !ok {
+		DiscordSession.GuildMemberRoleAdd(guildID, user.ID, roleID)
+		supremeRuler[guildID] = user.ID
+	} else if dbUserIsTop(user) && ok && oldUser != user.ID {
+		DiscordSession.GuildMemberRoleRemove(guildID, oldUser, roleID)
+		DiscordSession.GuildMemberRoleAdd(guildID, user.ID, roleID)
+		supremeRuler[guildID] = user.ID
+	} else if !dbUserIsTop(user) && ok && oldUser == user.ID {
+		DiscordSession.GuildMemberRoleRemove(guildID, user.ID, roleID)
+		newRuler := dbGetTopUser()
+		err := DiscordSession.GuildMemberRoleAdd(guildID, newRuler, roleID)
+		if err == nil {
+			supremeRuler[guildID] = newRuler
+		}
+	}
+}
+
+func isALoser(guildID string, user *discordgo.User) {
+	if role, ok := loserRoleID[guildID]; ok {
+		DiscordSession.GuildMemberRoleAdd(guildID, user.ID, role)
+	}
 }
 
 func isNotALoser(guildID string, user *discordgo.User) {
+	if role, ok := loserRoleID[guildID]; ok {
+		DiscordSession.GuildMemberRoleRemove(guildID, user.ID, role)
+	}
+}
+
+func getRoleID(guildID, roleName string) (roleID string) {
 	roles, _ := DiscordSession.GuildRoles(guildID)
 	var role *discordgo.Role
 	for _, v := range roles {
-		if v.Name == "Losers" {
+		if v.Name == roleName {
 			role = v
 			break
 		}
 	}
 	if role == nil {
-		return
+		return ""
 	}
-	DiscordSession.GuildMemberRoleRemove(guildID, user.ID, role.ID)
+	return role.ID
 }
 
 func addRespec(guildID string, user *discordgo.User, rating int) {
-	temp := addRespecHelp(user, rating)
+	change := addRespecHelp(user, rating)
 
-	if temp < 0 {
+	if change == badChange {
 		isALoser(guildID, user)
-	} else if temp > 0 {
+	} else if change == goodChange {
 		isNotALoser(guildID, user)
 	}
+
+	checkTopUser(guildID, user)
 }
 
 func addRespecHelp(user *discordgo.User, rating int) int {
@@ -120,17 +193,17 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 	}
 
 	totalRespec += newRespec
-	log.Printf("%v %+d respec\n", user, newRespec)
+	Log(fmt.Sprintf("%v %+d respec", user, newRespec))
 
 	dbGainRespec(user, newRespec)
 
 	if userRespec >= 0 && userRespec+newRespec < 0 {
-		return -1
+		return badChange
 	} else if userRespec < 0 && userRespec+newRespec >= 0 {
-		return 1
+		return goodChange
 	}
 
-	return 0
+	return noChange
 }
 
 // evaluate messages
@@ -148,7 +221,7 @@ func RespecMessage(message *discordgo.Message) {
 		return
 	}
 
-	log.Printf("%v: %v\n", author, message.ContentWithMentionsReplaced())
+	Log(fmt.Sprintf("%v: %v", author, message.ContentWithMentionsReplaced()))
 
 	numRespec += respecMentions(guild.ID, author, message)
 
@@ -163,19 +236,39 @@ func messageExistsInDB(messageID string) bool {
 
 // if someone talkin to you you aight
 func respecMentions(guildID string, author *discordgo.User, message *discordgo.Message) (respec int) {
-	users := message.Mentions
+	usersList := message.Mentions
 	timeStamp, _ := message.Timestamp.Parse()
 
+	roles := message.MentionRoles
+	guild, err := DiscordSession.Guild(guildID)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range roles {
+		usersList = append(usersList, mentionRoleHelper(guild, v)...)
+	}
+
+	users := make(map[string]*discordgo.User)
+
+	for _, v := range usersList {
+		users[v.ID] = v
+	}
+
 	for _, v := range users {
+		if isBot(v) {
+			continue
+		}
 		if v.ID == author.ID {
-			log.Println(author, "mentioned self")
+			Log(fmt.Sprintf("%v mentioned self", author))
 			dbMention(author, v, message, -mentionValue, timeStamp)
 			respec -= mentionValue
 		} else if !canMention(v, timeStamp) {
-			log.Println(v, "mentioned by", author, "too soon since last mention")
+			Log(fmt.Sprintf("%v mentioned by %v too soon since last mention", v, author))
 			dbMention(author, v, message, 0, timeStamp)
 		} else {
-			log.Println(v, "mentioned by", author)
+			Log(fmt.Sprintf("%v mentioned by %v", v, author))
 			addRespec(guildID, v, mentionValue)
 			dbMention(author, v, message, mentionValue, timeStamp)
 		}
@@ -189,79 +282,22 @@ func canMention(user *discordgo.User, timeGiven time.Time) bool {
 		timeDelta := timeGiven.Sub(oldTime)
 		if timeDelta.Minutes() < 5 {
 			return false
-		} else {
-			return true
 		}
+		return true
 	}
 	return true
 }
 
-// gif someone respec
-func GiveRespec(message *discordgo.Message, positive bool) {
-	mentions := message.Mentions
-	author := message.Author
-	timeStamp, _ := message.Timestamp.Parse()
-	respec := dbGetUserRespec(author)
-	numRespec := 0
-
-	channel, _ := DiscordSession.Channel(message.ChannelID)
-	guild, _ := DiscordSession.Guild(channel.GuildID)
-
-	if respec <= 0 {
-		numRespec = 2
-	} else {
-		numRespec = respec / 10
-		if numRespec < 5 {
-			numRespec = 5
-		} else if numRespec > 25 {
-			numRespec = 25
+func mentionRoleHelper(guild *discordgo.Guild, roleID string) (users []*discordgo.User) {
+	members := guild.Members
+	for _, v := range members {
+		for _, role := range v.Roles {
+			if roleID == role {
+				users = append(users, v.User)
+			}
 		}
 	}
-
-	if !positive {
-		numRespec = -numRespec
-	}
-
-	// lose respec if you use it wrong
-	if len(mentions) < 1 || !validGiveRespec(author, mentions, timeStamp) {
-		log.Println(author, "Used respec wrong")
-		numRespec *= 2
-		addRespec(guild.ID, author, -numRespec)
-		dbGiveRespec(author, author, -numRespec, timeStamp)
-		mentions = nil
-	} else {
-		addRespec(guild.ID, author, correctUsageValue)
-		dbGiveRespec(author, author, correctUsageValue, timeStamp)
-	}
-
-	for _, v := range mentions {
-		log.Println(author, " gave respec to ", v)
-		addRespec(guild.ID, v, numRespec)
-		dbGiveRespec(author, v, numRespec, timeStamp)
-	}
-}
-
-func canGiveRespec(user *discordgo.User, timeGiven time.Time) bool {
-	if oldTime, ok := dbGetUserLastRespecTime(user.String()); ok {
-		timeDelta := timeGiven.Sub(oldTime)
-		if timeDelta.Minutes() < 30 {
-			return false
-		}
-	}
-	return true
-}
-
-// if you try to respec yourself fuck you
-func validGiveRespec(author *discordgo.User, users []*discordgo.User, timeGiven time.Time) bool {
-	if !canGiveRespec(author, timeGiven) {
-		return false
-	}
-	for _, v := range users {
-		if author.ID == v.ID {
-			return false
-		}
-	}
-	return true
+	return
 }
 
 func RespecReaction(reaction *discordgo.MessageReaction, added bool) {
@@ -292,7 +328,7 @@ func RespecReactionAdd(reaction *discordgo.MessageReaction) {
 		addRespec(guild.ID, author, reactionValue)
 	}
 
-	log.Printf("%v got a reaction from %v\n", author, user)
+	Log(fmt.Sprintf("%v got a reaction from %v", author, user))
 
 	dbReactionAdd(user, reaction, timeStamp)
 }
@@ -325,9 +361,9 @@ func RespecReactionRemove(reaction *discordgo.MessageReaction) {
 		addRespec(guild.ID, author, -reactionValue)
 	}
 
-	log.Printf("%v lost a reaction\n", author)
+	Log(fmt.Sprintf("%v lost a reaction", author))
 
-	log.Printf("%v removed a reaction\n", user)
+	Log(fmt.Sprintf("%v removed a reaction", user))
 	addRespec(guild.ID, user, -reactionValue)
 	dbReactionRemove(user, reaction, timeStamp)
 }

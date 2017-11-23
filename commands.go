@@ -36,8 +36,6 @@ func InitCmds() {
 		"lookatme": CmdFuncHelpType{cmdHere, "Fuck off, user", false},
 		"fuckoff":  CmdFuncHelpType{cmdNotHere, "Fuck off, bot", true},
 		"version":  CmdFuncHelpType{cmdVersion, "Outputs the current bot version", true},
-		"respec":   CmdFuncHelpType{cmdRespec, "RESPEC", true},
-		"norespec": CmdFuncHelpType{cmdNoRespec, "NO RESPEC", true},
 		"stats":    CmdFuncHelpType{cmdStats, "Displays stats about this bot", true},
 		"bet":      CmdFuncHelpType{cmdBet, "WHO GONNA WIN? `bet help`", true},
 	}
@@ -79,7 +77,8 @@ func cmdHelp(message *discordgo.MessageCreate, args []string) {
 }
 
 func cmdVersion(message *discordgo.MessageCreate, args []string) {
-	SendReply(message.ChannelID, "Version: "+Version)
+	reply := fmt.Sprintf("Version: %v", Version)
+	SendReply(message.ChannelID, reply)
 }
 
 func cmdHere(message *discordgo.MessageCreate, args []string) {
@@ -94,14 +93,17 @@ func cmdHere(message *discordgo.MessageCreate, args []string) {
 	}
 	Channels[channel.ID] = true
 	Servers[channel.GuildID] = true
+	dbAddChannel(channel, true)
 	SendReply(channel.ID, "Fuck on me")
-	loserCheck(channel.GuildID)
+	initLosers(channel.GuildID)
+	initTopUser(channel.GuildID)
 }
 
 func cmdNotHere(message *discordgo.MessageCreate, args []string) {
 	channel, _ := DiscordSession.Channel(message.ChannelID)
 	Channels[channel.ID] = false
 	Servers[channel.GuildID] = false
+	dbAddChannel(channel, false)
 
 }
 
@@ -114,16 +116,6 @@ func cmdStats(message *discordgo.MessageCreate, args []string) {
 	stats += strings.Join(losers, ", ")
 	stats += " `"
 	SendReply(message.ChannelID, stats)
-}
-
-func cmdRespec(message *discordgo.MessageCreate, args []string) {
-	// give a user respec
-	GiveRespec(message.Message, true)
-}
-
-func cmdNoRespec(message *discordgo.MessageCreate, args []string) {
-	// lose a user respec
-	GiveRespec(message.Message, false)
 }
 
 func cmdBet(message *discordgo.MessageCreate, args []string) {

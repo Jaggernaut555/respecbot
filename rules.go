@@ -72,14 +72,14 @@ func lastPost(author *discordgo.User, newMessage *discordgo.Message) (respec int
 		if message.Author.ID == author.ID {
 			respec -= minValue
 		} else {
-			respec += minValue
+			respec += smallValue
 		}
 
 		if message.Content == newMessage.Content {
 			respec -= bigValue
 		}
 	} else {
-		respec += minValue
+		respec += smallValue
 	}
 
 	channelLastMessage[newMessage.ChannelID] = newMessage
@@ -93,6 +93,10 @@ func respecLetters(author *discordgo.User, message *discordgo.Message) (respec i
 	var vowelCount int64
 	var consonantCount int64
 	var otherCount int64
+
+	if len(content) < 1 {
+		return -smallValue
+	}
 
 	for _, c := range content {
 		switch letters[c] {
@@ -121,15 +125,18 @@ func respecLetters(author *discordgo.User, message *discordgo.Message) (respec i
 	}
 	if vowelCount > consonantCount {
 		respec += minValue
-	} else if float64(vowelCount) < float64(consonantCount)*0.65 {
+	} else if float64(vowelCount) < float64(consonantCount)*0.45 {
 		respec -= smallValue
 	}
 	if otherCount > totalLetters.Int64() {
-		respec -= bigValue
+		respec -= midValue
 	}
 	if capsCount < 1 && (vowelCount > 0 || consonantCount > 0) {
 		respec -= smallValue
 	} else {
+		respec += minValue
+	}
+	if end := content[len(content)-1:]; end == "." || end == "?" || end == "!" {
 		respec += minValue
 	}
 	return
@@ -140,7 +147,7 @@ func respecTime(author *discordgo.User, message *discordgo.Message) (respec int)
 	timeStamp, _ := message.Timestamp.Parse()
 	if oldTime, ok := dbGetUserLastMessageTime(author.String()); ok {
 		timeDelta := timeStamp.Sub(oldTime)
-		if timeDelta.Seconds() < 2 {
+		if timeDelta.Seconds() < 1.5 {
 			respec -= smallValue
 		} else if timeDelta.Hours() > 6 {
 			available := dbGetUserRespec(author)
@@ -166,7 +173,7 @@ func respecLength(author *discordgo.User, message *discordgo.Message) (respec in
 
 	if length < 2 {
 		respec -= smallValue
-	} else if length > 25 {
+	} else if length > 30 {
 		respec -= bigValue
 	}
 	return

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +20,9 @@ type Bet struct {
 	totalRespec  int
 	started      bool
 	open         bool
+	cancelled    bool
 	author       *discordgo.User
+	winner       *discordgo.User
 	userStatus   map[string]bool
 	users        map[string]*discordgo.User
 	state        chan betMessage
@@ -213,7 +214,7 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 	go startBetTimer(b.state)
 
 	reply := fmt.Sprintf("%v started a bet of %v", author.String(), b.respec)
-	log.Println(reply)
+	Log(reply)
 }
 
 func startBetTimer(c chan betMessage) {
@@ -258,15 +259,15 @@ func roleHelper(guild *discordgo.Guild, roleID string, respecNeeded int) (users 
 }
 
 func userCanBet(user *discordgo.User, respecNeeded int) bool {
-	if available := dbGetUserRespec(user); available >= respecNeeded {
+	if available := dbGetUserRespec(user); available >= respecNeeded || !isBot(user) {
 		return true
 	}
 	return false
 }
 
 // goroutine to run an active bet
+// this handles all the winnin' 'n stuff
 func betEngage(c chan betMessage, b *Bet, mux *sync.Mutex) {
-	var winnerID string
 	activeBetEmbed(b)
 
 Loop:
@@ -286,29 +287,31 @@ Loop:
 		}
 
 		if !b.started && !b.open {
-			if checkBetReady(b.userStatus) {
+			if checkBetReady(b) {
 				startBet(b)
 			}
 			activeBetEmbed(b)
-		}
-		if b.started {
+		} else if b.started {
 			var ok bool
-			if winnerID, ok = checkWinner(b.userStatus); ok {
+			if ok = checkWinner(b); ok {
 				break Loop
 			} else {
 				activeBetEmbed(b)
 			}
+		} else {
+			activeBetEmbed(b)
 		}
 		mux.Unlock()
 	}
 
-	if winner, ok := b.users[winnerID]; ok && len(b.users) > 1 {
-		betWon(b, winner)
-		log.Printf("Bet ended. %v won %v respec\n", winner.String(), b.totalRespec-b.respec)
-		winnerCard(b, winner)
+	if b.winner != nil && len(b.users) > 1 {
+		betWon(b)
+		Log(fmt.Sprintf("Bet ended. %v won %v respec", b.winner, b.totalRespec-b.respec))
+		winnerCard(b)
+		dbRecordBet(b)
 	} else {
+		cancelBet(b)
 		deleteEmbed(b)
-		log.Println("Bet ended. No winner, repsec refunded")
 	}
 
 	delete(allBets, b.channelID)
@@ -323,7 +326,7 @@ func callBet(b *Bet, user *discordgo.User) {
 	b.users[user.ID] = user
 	b.totalRespec += b.respec
 
-	log.Printf("%+v called\n", user.String())
+	Log(fmt.Sprintf("%+v called", user.String()))
 
 	addRespec(b.guildID, user, -b.respec)
 }
@@ -334,7 +337,7 @@ func loseBet(b *Bet, user *discordgo.User) {
 	}
 	b.userStatus[user.ID] = false
 
-	log.Printf("%+v lost\n", user.String())
+	Log(fmt.Sprintf("%+v lost", user.String()))
 }
 
 func dropOut(b *Bet, user *discordgo.User) {
@@ -344,34 +347,39 @@ func dropOut(b *Bet, user *discordgo.User) {
 	b.userStatus[user.ID] = false
 	b.totalRespec -= b.respec
 
-	log.Printf("%+v dropped out\n", user.String())
+	Log(fmt.Sprintf("%+v dropped out", user.String()))
 
 	addRespec(b.guildID, user, b.respec)
 }
 
-func betWon(b *Bet, winner *discordgo.User) {
-	addRespec(b.guildID, winner, b.totalRespec)
+func betWon(b *Bet) {
+	addRespec(b.guildID, b.winner, b.totalRespec)
 
 	for _, v := range b.users {
-		if v.ID != winner.ID {
+		if v.ID != b.winner.ID {
 			addRespec(b.guildID, v, -b.respec)
 		}
 	}
 }
 
 func cancelBet(b *Bet) {
+	if b.cancelled {
+		return
+	}
 	for k, v := range b.userStatus {
 		if v {
 			addRespec(b.guildID, b.users[k], b.respec)
 			b.userStatus[k] = false
 		}
+		delete(b.userStatus, k)
 	}
 
 	reply := fmt.Sprintf("Bet Cancelled, respec refunded")
 
 	b.started = true
+	b.cancelled = true
 	SendReply(b.channelID, reply)
-	log.Println(reply)
+	Log(reply)
 }
 
 func startBet(b *Bet) {
@@ -392,7 +400,7 @@ func startBet(b *Bet) {
 		b.state <- betMessage{user: nil, arg: "cancel"}
 		reply := "Not enough users entered the bet"
 		SendReply(b.channelID, reply)
-		log.Println(reply)
+		Log(reply)
 		return
 	}
 	go betEndTimer(b.state)
@@ -400,11 +408,11 @@ func startBet(b *Bet) {
 	timeStamp := fmt.Sprintf(b.endTime.Format("15:04:05"))
 	reply := fmt.Sprintf("Bet started: Total pot:%v Must end before %v.", b.totalRespec, timeStamp)
 
-	log.Println(reply)
+	Log(reply)
 }
 
-func checkBetReady(users map[string]bool) bool {
-	for _, v := range users {
+func checkBetReady(b *Bet) bool {
+	for _, v := range b.userStatus {
 		if !v {
 			return false
 		}
@@ -419,21 +427,23 @@ func betEndTimer(c chan betMessage) {
 }
 
 // check if only one user has not lost the bet
-func checkWinner(userstatus map[string]bool) (winner string, won bool) {
+func checkWinner(b *Bet) (won bool) {
 	count := 0
-	for k, v := range userstatus {
+	var winnerID string
+	for k, v := range b.userStatus {
 		if v {
-			winner = k
+			winnerID = k
 			count++
 		}
 		if count > 1 {
-			return "", false
+			return false
 		}
 	}
 	if count == 0 {
-		return "", true
+		return true
 	}
-	return winner, true
+	b.winner = b.users[winnerID]
+	return true
 }
 
 func activeBetEmbed(b *Bet) {
@@ -481,16 +491,12 @@ func activeBetEmbed(b *Bet) {
 	b.announcement = msg
 }
 
-func deleteEmbed(b *Bet) {
-	DiscordSession.ChannelMessageDelete(b.announcement.ChannelID, b.announcement.ID)
-}
-
-func winnerCard(b *Bet, winner *discordgo.User) {
+func winnerCard(b *Bet) {
 	embed := new(discordgo.MessageEmbed)
 	embed.Footer = new(discordgo.MessageEmbedFooter)
 	embed.Thumbnail = new(discordgo.MessageEmbedThumbnail)
 
-	title := fmt.Sprintf("%v won %v respec", winner.Username, b.totalRespec-b.respec)
+	title := fmt.Sprintf("%v won %v respec", b.winner.Username, b.totalRespec-b.respec)
 
 	embed.Title = title
 	embed.Description = fmt.Sprintf("Total Pot: %v", b.totalRespec)
@@ -518,6 +524,10 @@ func winnerCard(b *Bet, winner *discordgo.User) {
 	}
 
 	b.announcement = msg
+}
+
+func deleteEmbed(b *Bet) {
+	DiscordSession.ChannelMessageDelete(b.announcement.ChannelID, b.announcement.ID)
 }
 
 // multiple pot winners?

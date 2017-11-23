@@ -10,14 +10,12 @@ import (
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
-	//_ "github.com/go-sql-driver/mysql"
 )
 
 // Constants
 const (
-	Version = "v4.2.0"
-	dbName  = "respecdb"
-	dbUser  = "respecbot"
+	dbName = "respecdb"
+	dbUser = "respecbot"
 )
 
 // Global vars
@@ -27,6 +25,7 @@ var (
 	Channels       map[string]bool
 	Servers        map[string]bool
 	DiscordSession *discordgo.Session
+	logger         *log.Logger
 )
 
 func init() {
@@ -35,15 +34,14 @@ func init() {
 	purge := flag.Bool("purge", false, "Use this flag to purge the database. Must be used with -p")
 	flag.Parse()
 
-	log.SetOutput(os.Stdout)
+	logger = log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
-	Channels = map[string]bool{}
-	Servers = map[string]bool{}
 	InitDB()
 	InitRatings()
 	InitCmds()
 	InitRules()
 	InitBets()
+	InitChannels()
 
 	if *purge {
 		if dbPassword != "" {
@@ -58,18 +56,25 @@ func init() {
 	}
 }
 
+func InitChannels() {
+	Channels = map[string]bool{}
+	Servers = map[string]bool{}
+
+	dbLoadActiveChannels(&Channels, &Servers)
+}
+
 func main() {
-	log.Println("TIME TO RESPEC...")
+	Log("TIME TO RESPEC...")
 
 	if discordToken == "" {
-		log.Println("You must provide a Discord authentication token (-t)")
+		Log("You must provide a Discord authentication token (-t)")
 		return
 	}
 
 	var err error
 	DiscordSession, err = discordgo.New("Bot " + discordToken)
 	if err != nil {
-		log.Println("error creating Discord session,", err)
+		Log("error creating Discord session,", err.Error())
 		return
 	}
 
@@ -80,11 +85,12 @@ func main() {
 
 	err = DiscordSession.Open()
 	if err != nil {
-		log.Println("error opening connection,", err)
+		Log("error opening connection,", err.Error())
 		return
 	}
 
-	log.Println("Bot is now running. Press CTRL-C to exit.")
+	Log("Bot is now running. Press CTRL-C to exit.")
+	announceReturn()
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
@@ -92,9 +98,24 @@ func main() {
 	defer DiscordSession.Close()
 }
 
+func announceReturn() {
+	for k, v := range Channels {
+		if v {
+			channel, err := DiscordSession.Channel(k)
+			if err != nil {
+				panic(err)
+			}
+			if active, ok := Servers[channel.GuildID]; active && ok {
+				reply := fmt.Sprintf("I'm back, bitches, and I'm running %v", Version)
+				SendReply(k, reply)
+			}
+		}
+	}
+}
+
 func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate) {
 	// Do not talk to self
-	if message.Author.ID == session.State.User.ID {
+	if message.Author.ID == session.State.User.ID || isBot(message.Author) {
 		return
 	}
 
@@ -107,9 +128,13 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 	channel, err := session.Channel(message.ChannelID)
 	if err != nil {
 		return
-	} else if channel != nil && Servers[channel.GuildID] == true {
+	} else if channel != nil && Servers[channel.GuildID] == true && Channels[channel.ID] == true {
 		RespecMessage(message.Message)
 	}
+}
+
+func isBot(user *discordgo.User) bool {
+	return user.Bot
 }
 
 func reactionAdd(session *discordgo.Session, reaction *discordgo.MessageReactionAdd) {
@@ -131,4 +156,8 @@ func SendReply(channelID string, reply string) {
 func SendEmbed(channelID string, embed *discordgo.MessageEmbed) (msg *discordgo.Message) {
 	msg, _ = DiscordSession.ChannelMessageSendEmbed(channelID, embed)
 	return
+}
+
+func Log(data ...string) {
+	logger.Print(data)
 }

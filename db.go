@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -17,11 +16,18 @@ type User struct {
 }
 
 type Message struct {
-	ID      string    `xorm:"varchar(50) pk"`
-	Content string    `xorm:"varchar(2000) not null"`
-	UserID  string    `xorm:"not null"`
-	Respec  int       `xorm:"default 0"`
-	Time    time.Time `xorm:"not null"`
+	ID        string    `xorm:"varchar(50) pk"`
+	ChannelID string    `xorm:"not null"`
+	Content   string    `xorm:"varchar(2000) not null"`
+	UserID    string    `xorm:"not null"`
+	Respec    int       `xorm:"default 0"`
+	Time      time.Time `xorm:"not null"`
+}
+
+type Channel struct {
+	ID      string `xorm:"varchar(50) pk"`
+	GuildID string `xorm:"not null"`
+	Active  bool   `xorm:"default 0"`
 }
 
 type Reaction struct {
@@ -32,14 +38,6 @@ type Reaction struct {
 	Removed   time.Time `xorm:"default null"`
 }
 
-type Respec struct {
-	ID         uint64    `xorm:"pk autoincr"`
-	GiverID    string    `xorm:"not null"`
-	ReceiverID string    `xorm:"not null"`
-	Time       time.Time `xorm:"not null"`
-	Respec     int       `xorm:"default 0"`
-}
-
 type Mention struct {
 	GiverID    string    `xorm:"varchar(50) pk"`
 	ReceiverID string    `xorm:"varchar(50) pk"`
@@ -48,21 +46,25 @@ type Mention struct {
 	Respec     int       `xorm:"default 0"`
 }
 
-/*
-type Bet struct {
-	ID         uint64    `xorm:"pk autoincr"`
-	StarterID    string    `xorm:"not null"`
-	Winner     string    `xorm:"default null"`
-	Respec     int       `xorm:"default 0"`
-	Time       time.Time `xorm:"not null"`
+type DBBet struct {
+	ID        uint64    `xorm:"pk autoincr"`
+	ChannelID string    `xorm:"not null"`
+	StarterID string    `xorm:"not null"`
+	Winner    string    `xorm:"not null"`
+	Pot       int       `xorm:"default 0"`
+	Bet       int       `xorm:"default 0"`
+	Time      time.Time `xorm:"not null"`
+}
+
+func (*DBBet) TableName() string {
+	return "Bet"
 }
 
 // ID = Bet.ID, table to hold all users who participated in a bet
 type BetUsers struct {
-	ID uint64 `xorm:"pk"`
-	UserID uint64 `xorm:"pk"`
+	BetID  uint64 `xorm:"pk"`
+	UserID string `xorm:"pk"`
 }
-*/
 
 type joinReactionMessage struct {
 	Reaction `xorm:"extends"`
@@ -85,23 +87,44 @@ func InitDB() {
 
 	createTables(engine)
 
-	log.Println("Database running")
+	var b *Bet
+	b = new(Bet)
+	b.channelID = "channel"
+	b.guildID = "guild"
+	b.totalRespec = 5
+	b.respec = 5
+	b.author = new(discordgo.User)
+	b.author.ID = "author"
+	b.winner = new(discordgo.User)
+	b.winner.ID = "winner"
+	b.time = time.Now()
+
+	dbRecordBet(b)
+
+	Log("Database running")
 }
 
 func createTables(e *xorm.Engine) {
-	if err := e.Sync2(new(User)); err != nil {
+	var err error
+	if err = e.Sync2(new(User)); err != nil {
 		panic(err)
 	}
-	if err := e.Sync2(new(Message)); err != nil {
+	if err = e.Sync2(new(Message)); err != nil {
 		panic(err)
 	}
-	if err := e.Sync2(new(Reaction)); err != nil {
+	if err = e.Sync2(new(Reaction)); err != nil {
 		panic(err)
 	}
-	if err := e.Sync2(new(Respec)); err != nil {
+	if err = e.Sync2(new(Mention)); err != nil {
 		panic(err)
 	}
-	if err := e.Sync2(new(Mention)); err != nil {
+	if err = e.Sync2(new(Channel)); err != nil {
+		panic(err)
+	}
+	if err = e.Sync2(new(DBBet)); err != nil {
+		panic(err)
+	}
+	if err = e.Sync2(new(BetUsers)); err != nil {
 		panic(err)
 	}
 }
@@ -114,9 +137,7 @@ func dbGetTotalRespec() (total int) {
 		panic(err)
 	}
 
-	total = int(temp)
-
-	return
+	return int(temp)
 }
 
 func dbGetUserRespec(discordUser *discordgo.User) (respec int) {
@@ -129,6 +150,30 @@ func dbGetUserRespec(discordUser *discordgo.User) (respec int) {
 		respec = user.Respec
 	}
 	return
+}
+
+func dbGetTopUser() (userID string) {
+	user := new(User)
+	has, err := engine.Table("User").Select("*").Desc("Respec").Get(user)
+	if err != nil {
+		panic(err)
+	}
+	if has {
+		return user.ID
+	}
+	return ""
+}
+
+func dbUserIsTop(discordUser *discordgo.User) bool {
+	user := new(User)
+	has, err := engine.Table("User").Select("*").Desc("Respec").Get(user)
+	if err != nil {
+		panic(err)
+	}
+	if has && user.ID == discordUser.ID {
+		return true
+	}
+	return false
 }
 
 func dbLoadRespec(list *map[string]int) {
@@ -161,7 +206,7 @@ func dbGainRespec(discordUser *discordgo.User, respec int) {
 }
 
 func dbNewMessage(discordUser *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
-	msg := &Message{ID: message.ID, Content: message.Content, Respec: numRespec, UserID: discordUser.String(), Time: timeStamp}
+	msg := &Message{ID: message.ID, Content: message.Content, ChannelID: message.ChannelID, Respec: numRespec, UserID: discordUser.String(), Time: timeStamp}
 	if _, err := engine.Insert(msg); err != nil {
 		panic(err)
 	}
@@ -175,13 +220,30 @@ func dbMessageExists(messageID string) (has bool) {
 	return
 }
 
+func dbAddChannel(discordChannel *discordgo.Channel, active bool) {
+	channel := &Channel{ID: discordChannel.ID, GuildID: discordChannel.GuildID}
+	has, err := engine.Get(channel)
+	if err != nil {
+		panic(err)
+	}
+	channel.Active = active
+	if has {
+		if _, err = engine.Id(core.PK{channel.ID}).Cols("Active").Update(channel); err != nil {
+			panic(err)
+		}
+	} else {
+		if _, err = engine.Insert(channel); err != nil {
+			panic(err)
+		}
+	}
+}
+
 func dbGetUserLastMessageTime(userID string) (timeStamp time.Time, ok bool) {
 	message := Message{UserID: userID}
 	has, err := engine.Select("UserId, max(Time) AS Time").GroupBy("UserID").Get(&message)
 	if err != nil {
 		panic(err)
 	}
-
 	if has {
 		timeStamp = message.Time
 		ok = true
@@ -204,26 +266,6 @@ func dbGetUserLastMentionedTime(userID string) (timeStamp time.Time, ok bool) {
 	}
 	if has {
 		timeStamp = mention.Time
-		ok = true
-	}
-	return
-}
-
-func dbGiveRespec(giver *discordgo.User, receiver *discordgo.User, numRespec int, timeStamp time.Time) {
-	respec := &Respec{GiverID: giver.String(), ReceiverID: receiver.String(), Respec: numRespec, Time: timeStamp}
-	if _, err := engine.Insert(respec); err != nil {
-		panic(err)
-	}
-}
-
-func dbGetUserLastRespecTime(userID string) (timeStamp time.Time, ok bool) {
-	respec := Respec{GiverID: userID}
-	has, err := engine.Select("GiverID, max(Time) AS Time").GroupBy("GiverID").Get(&respec)
-	if err != nil {
-		panic(err)
-	}
-	if has {
-		timeStamp = respec.Time
 		ok = true
 	}
 	return
@@ -309,13 +351,51 @@ func dbGetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time
 	return
 }
 
+func dbRecordBet(b *Bet) {
+	bet := DBBet{ChannelID: b.channelID, Winner: b.winner.ID, StarterID: b.author.ID, Bet: b.respec, Pot: b.totalRespec, Time: b.time}
+	var users []BetUsers
+
+	_, err := engine.Table("Bet").Insert(bet)
+	if err != nil {
+		panic(err)
+	}
+	_, err = engine.Table("Bet").Get(&bet)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, v := range b.users {
+		users = append(users, BetUsers{BetID: bet.ID, UserID: v.ID})
+	}
+	if _, err := engine.Insert(&users); err != nil {
+		panic(err)
+	}
+}
+
+func dbLoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool) {
+	var channels []Channel
+
+	if err := engine.Find(&channels); err != nil {
+		panic(err)
+	}
+
+	for _, v := range channels {
+		if v.Active {
+			(*chanList)[v.ID] = v.Active
+			(*guildList)[v.GuildID] = v.Active
+		}
+	}
+}
+
 func purgeDB() error {
 	engine.ShowSQL(true)
 	var users []User
 	var messages []Message
 	var reactions []Reaction
-	var respecs []Respec
-	var Mention []Mention
+	var mention []Mention
+	var channels []Channel
+	var dbbet []DBBet
+	var betusers []BetUsers
 	if err := engine.Find(&users); err != nil {
 		return err
 	}
@@ -340,21 +420,38 @@ func purgeDB() error {
 			return err
 		}
 	}
-	if err := engine.Find(&respecs); err != nil {
+	if err := engine.Find(&mention); err != nil {
 		return err
 	}
-	for _, v := range respecs {
+	for _, v := range mention {
 		if _, err := engine.Delete(&v); err != nil {
 			return err
 		}
 	}
-	if err := engine.Find(&Mention); err != nil {
+	if err := engine.Find(&channels); err != nil {
 		return err
 	}
-	for _, v := range Mention {
+	for _, v := range channels {
 		if _, err := engine.Delete(&v); err != nil {
 			return err
 		}
 	}
+	if err := engine.Find(&dbbet); err != nil {
+		return err
+	}
+	for _, v := range dbbet {
+		if _, err := engine.Delete(&v); err != nil {
+			return err
+		}
+	}
+	if err := engine.Find(&betusers); err != nil {
+		return err
+	}
+	for _, v := range betusers {
+		if _, err := engine.Delete(&v); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
