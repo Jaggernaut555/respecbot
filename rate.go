@@ -294,6 +294,7 @@ func mentionRoleHelper(guild *discordgo.Guild, roleID string) (users []*discordg
 		for _, role := range v.Roles {
 			if roleID == role {
 				users = append(users, v.User)
+				break
 			}
 		}
 	}
