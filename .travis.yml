@@ -7,15 +7,25 @@ go:
 install:
   - go get -t ./...
 
-script:
-  - go build -v
+jobs:
+  include:
+    - stage: compile
+      go:
+        - 1.9
+        - master
+      script: go build -v
+    - stage: deploy
+      go: 1.9
+      deploy:
+        provider: script
+        script: scripts/deploy.sh
+        on:
+          branch: master
 
-deploy:
-  provider: script
-  script: scripts/deploy.sh
-  on:
-    branch: master
-
+stages:
+  - compile
+  - name: deploy
+    if: branch = master
 
 notifications:
   email:
