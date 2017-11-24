@@ -183,7 +183,14 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 	}
 
 	temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
-	if temp > 0.15 {
+
+	if math.Abs(float64(userRespec)) > 100 {
+		if userRespec > 0 && newRespec < 0 {
+			temp = 0.01
+		} else if userRespec < 0 && newRespec > 0 {
+			temp = 0.01
+		}
+	} else if temp > 0.15 {
 		temp = 0.15
 	} else if temp < 0.01 {
 		temp = 0.01

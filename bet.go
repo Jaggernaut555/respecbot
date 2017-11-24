@@ -145,9 +145,13 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 			b.state <- betMessage{user: author, arg: "cancel"}
 		}
 
+	case "status":
+		b.state <- betMessage{user: author, arg: "status"}
+
 	default:
 		reply := fmt.Sprintf("Not a valid for active bet, use call/lose/start/cancel")
 		SendReply(message.ChannelID, reply)
+		b.state <- betMessage{user: author, arg: "invalid"}
 	}
 }
 
@@ -284,6 +288,7 @@ Loop:
 			startBet(b)
 		case "cancel":
 			cancelBet(b)
+		default:
 		}
 
 		if !b.started && !b.open {
