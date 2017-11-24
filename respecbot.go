@@ -107,7 +107,7 @@ func announceReturn() {
 			}
 			if active, ok := Servers[channel.GuildID]; active && ok {
 				initLosers(channel.GuildID)
-				initTopUser(channel.GuildID)
+				initTopUsers(channel.GuildID)
 				reply := fmt.Sprintf("I'm back, bitches, and I'm running %v", Version)
 				SendReply(k, reply)
 			}

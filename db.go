@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -174,6 +175,30 @@ func dbUserIsTop(discordUser *discordgo.User) bool {
 		return true
 	}
 	return false
+}
+
+func dbGetRulingClass(list *map[string]bool) {
+	var users []User
+	if err := engine.Find(&users); err != nil {
+		panic(err)
+	}
+	total := float64(dbGetTotalRespec())
+	var pairs pairList
+	for _, v := range users {
+		pairs = append(pairs, pair{Key: v.ID, Value: v.Respec})
+	}
+	sort.Sort(sort.Reverse(pairs))
+	var totalPercent float64
+	for _, v := range pairs {
+		if totalPercent > 50 {
+			(*list)[v.Key] = false
+			continue
+		}
+		percent := (float64(v.Value) / total) * 100
+		totalPercent += percent
+		(*list)[v.Key] = true
+
+	}
 }
 
 func dbLoadRespec(list *map[string]int) {

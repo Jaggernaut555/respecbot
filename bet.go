@@ -64,6 +64,7 @@ func bet(message *discordgo.Message, args []string) {
 	if len(args) < 2 || args[1] == "help" {
 		reply := "```"
 		reply += "'bet help' - display this message\n"
+		reply += "'bet status' - display the status of an active bet\n"
 		reply += "'bet [value] [@user/role/everyone] - create a bet\n"
 		reply += "(No target is the same as @everyone)\n"
 		reply += "'bet call' - Call the active bet\n"
@@ -149,7 +150,7 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 		b.state <- betMessage{user: author, arg: "status"}
 
 	default:
-		reply := fmt.Sprintf("Not a valid for active bet, use call/lose/start/cancel")
+		reply := fmt.Sprintf("Not a valid for active bet, use call/lose/start/cancel/status")
 		SendReply(message.ChannelID, reply)
 		b.state <- betMessage{user: author, arg: "invalid"}
 	}

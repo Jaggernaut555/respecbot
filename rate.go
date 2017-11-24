@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"text/tabwriter"
 	"time"
@@ -23,6 +24,7 @@ const (
 	correctUsageValue = 2
 	reactionValue     = 2
 	mentionValue      = 3
+	chatLimiter       = 111
 )
 
 const (
@@ -32,17 +34,20 @@ const (
 )
 
 var (
-	totalRespec  int
-	supremeRuler map[string]string
-	loserRoleID  map[string]string
-	rulerRoleID  map[string]string
+	totalRespec       int
+	supremeRuler      string
+	rulingClass       map[string]bool
+	loserRoleID       map[string]string
+	rulerRoleID       map[string]string
+	rulingClassRoleID map[string]string
 )
 
 func InitRatings() {
 	userRatings := make(map[string]int)
-	supremeRuler = make(map[string]string)
+	rulingClass = make(map[string]bool)
 	loserRoleID = make(map[string]string)
 	rulerRoleID = make(map[string]string)
+	rulingClassRoleID = make(map[string]string)
 
 	rand.Seed(time.Now().Unix())
 
@@ -73,38 +78,46 @@ func initLosers(guildID string) {
 	}
 }
 
-func initTopUser(guildID string) {
+func initTopUsers(guildID string) {
 	guild, err := DiscordSession.Guild(guildID)
 	if err != nil {
 		panic(err)
 	}
 
-	roleID := getRoleID(guildID, "Supreme Ruler")
-	if roleID == "" {
-		return
-	}
+	supremeID := getRoleID(guildID, "Supreme Ruler")
+	if supremeID != "" {
+		rulerRoleID[guildID] = supremeID
 
-	rulerRoleID[guildID] = roleID
+		userID := dbGetTopUser()
 
-	userID := dbGetTopUser()
-
-	for _, v := range guild.Members {
-		if isBot(v.User) {
-			continue
+		for _, v := range guild.Members {
+			if isBot(v.User) {
+				continue
+			}
+			if v.User.ID == userID {
+				continue
+			}
+			DiscordSession.GuildMemberRoleRemove(guildID, v.User.ID, supremeID)
 		}
-		if v.User.ID == userID {
-			continue
+
+		if userID != "" {
+			err = DiscordSession.GuildMemberRoleAdd(guildID, userID, supremeID)
+			if err == nil {
+				supremeRuler = userID
+			}
 		}
-		DiscordSession.GuildMemberRoleRemove(guildID, v.User.ID, roleID)
 	}
 
-	if userID == "" {
-		return
-	}
+	initRulingClass(guildID)
+}
 
-	err = DiscordSession.GuildMemberRoleAdd(guildID, userID, roleID)
-	if err == nil {
-		supremeRuler[guildID] = userID
+func initRulingClass(guildID string) {
+	rulingID := getRoleID(guildID, "Ruling Class")
+
+	if rulingID != "" {
+		rulingClassRoleID[guildID] = rulingID
+
+		checkRulingClass(guildID)
 	}
 }
 
@@ -113,20 +126,50 @@ func checkTopUser(guildID string, user *discordgo.User) {
 	if !ok {
 		return
 	}
-	oldUser, ok := supremeRuler[guildID]
+	ok = (supremeRuler != "")
 	if dbUserIsTop(user) && !ok {
 		DiscordSession.GuildMemberRoleAdd(guildID, user.ID, roleID)
-		supremeRuler[guildID] = user.ID
-	} else if dbUserIsTop(user) && ok && oldUser != user.ID {
-		DiscordSession.GuildMemberRoleRemove(guildID, oldUser, roleID)
+		supremeRuler = user.ID
+	} else if dbUserIsTop(user) && ok && supremeRuler != user.ID {
+		DiscordSession.GuildMemberRoleRemove(guildID, supremeRuler, roleID)
 		DiscordSession.GuildMemberRoleAdd(guildID, user.ID, roleID)
-		supremeRuler[guildID] = user.ID
-	} else if !dbUserIsTop(user) && ok && oldUser == user.ID {
+		supremeRuler = user.ID
+	} else if !dbUserIsTop(user) && ok && supremeRuler == user.ID {
 		DiscordSession.GuildMemberRoleRemove(guildID, user.ID, roleID)
 		newRuler := dbGetTopUser()
 		err := DiscordSession.GuildMemberRoleAdd(guildID, newRuler, roleID)
 		if err == nil {
-			supremeRuler[guildID] = newRuler
+			supremeRuler = newRuler
+		}
+	}
+}
+
+func checkRulingClass(guildID string) {
+	guild, err := DiscordSession.Guild(guildID)
+	roleID, ok := rulerRoleID[guildID]
+	if err != nil || !ok {
+		return
+	}
+
+	newRulingClass := make(map[string]bool)
+	dbGetRulingClass(&newRulingClass)
+
+	if reflect.DeepEqual(newRulingClass, rulingClass) {
+		return
+	}
+
+	for k, v := range newRulingClass {
+		rulingClass[k] = v
+	}
+
+	for _, v := range guild.Members {
+		if isBot(v.User) {
+			continue
+		}
+		if rulingClass[v.User.ID] {
+			DiscordSession.GuildMemberRoleAdd(guildID, v.User.ID, roleID)
+		} else {
+			DiscordSession.GuildMemberRoleRemove(guildID, v.User.ID, roleID)
 		}
 	}
 }
@@ -168,6 +211,7 @@ func addRespec(guildID string, user *discordgo.User, rating int) {
 	}
 
 	checkTopUser(guildID, user)
+	checkRulingClass(guildID)
 }
 
 func addRespecHelp(user *discordgo.User, rating int) int {
@@ -182,9 +226,9 @@ func addRespecHelp(user *discordgo.User, rating int) int {
 		userRespec = 1
 	}
 
-	temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec))
+	temp := math.Abs(float64(userRespec)) * math.Log(1+math.Abs(float64(userRespec))) / math.Abs(float64(totalRespec)) * 0.65
 
-	if math.Abs(float64(userRespec)) > 100 {
+	if math.Abs(float64(userRespec)) > chatLimiter {
 		if userRespec > 0 && newRespec < 0 {
 			temp = 0.01
 		} else if userRespec < 0 && newRespec > 0 {

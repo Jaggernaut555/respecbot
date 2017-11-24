@@ -96,7 +96,7 @@ func cmdHere(message *discordgo.MessageCreate, args []string) {
 	dbAddChannel(channel, true)
 	SendReply(channel.ID, "Fuck on me")
 	initLosers(channel.GuildID)
-	initTopUser(channel.GuildID)
+	initTopUsers(channel.GuildID)
 }
 
 func cmdNotHere(message *discordgo.MessageCreate, args []string) {
