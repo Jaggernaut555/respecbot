@@ -146,7 +146,7 @@ func checkTopUser(guildID string, user *discordgo.User) {
 
 func checkRulingClass(guildID string) {
 	guild, err := DiscordSession.Guild(guildID)
-	roleID, ok := rulerRoleID[guildID]
+	roleID, ok := rulingClassRoleID[guildID]
 	if err != nil || !ok {
 		return
 	}
