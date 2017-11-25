@@ -3,6 +3,14 @@ language: go
 go:
   - 1.9
 
+env:
+  - "PATH=/home/travis/gopath/bin:$PATH"
+
+
+before_install:
+  - go get github.com/mattn/goveralls
+  - go get code.google.com/p/go.tools/cmd/cover
+
 stages:
   - test
   - name: deploy
@@ -12,7 +20,8 @@ jobs:
   include:
     - stage: test
       script: 
-        - go test ./...
+        - go test -v -covermode=count -coverprofile=coverage.out ./...
+        - goveralls -coverprofile=coverage.out -service travis-ci -repotoken $COVERALLS_TOKEN
     - stage: deploy
       script:
         - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
