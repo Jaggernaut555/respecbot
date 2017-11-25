@@ -3,17 +3,20 @@ language: go
 go:
   - 1.9
 
-before_script: go get -t ./...
-
-script: 
-  - go test ./...
-
-after_success:
-  if: branch = master
-    - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
-
 stages:
   - test
+  - name: deploy
+    if: branch = master
+
+jobs:
+  include:
+    - stage: test
+      before_script: go get -t ./...
+      script: 
+        - go test ./...
+    - stage: deploy
+      script:
+        - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
 
 notifications:
   email:
