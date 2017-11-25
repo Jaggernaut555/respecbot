@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Jaggernaut555/respecbot/bet"
-
+	"github.com/Jaggernaut555/respecbot/cards"
 	"github.com/Jaggernaut555/respecbot/db"
+	"github.com/Jaggernaut555/respecbot/games"
 	"github.com/Jaggernaut555/respecbot/rate"
 	"github.com/Jaggernaut555/respecbot/state"
 	"github.com/bwmarrin/discordgo"
@@ -43,6 +43,7 @@ func init() {
 		"version":  CmdFuncHelpType{cmdVersion, "Outputs the current bot version", true},
 		"stats":    CmdFuncHelpType{cmdStats, "Displays stats about this bot", true},
 		"bet":      CmdFuncHelpType{cmdBet, "WHO GONNA WIN? `bet help`", true},
+		"card":     CmdFuncHelpType{cmdCard, "IS A CARD", true},
 	}
 }
 
@@ -120,5 +121,10 @@ func cmdStats(message *discordgo.MessageCreate, args []string) {
 }
 
 func cmdBet(message *discordgo.MessageCreate, args []string) {
-	bet.BetCmd(message.Message, args)
+	games.ManualBetCmd(message.Message, args)
+}
+
+func cmdCard(message *discordgo.MessageCreate, args []string) {
+	card := cards.GenerateCard()
+	state.SendReply(message.ChannelID, fmt.Sprintf("%v", card))
 }
