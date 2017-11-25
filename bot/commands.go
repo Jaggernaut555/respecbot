@@ -126,5 +126,5 @@ func cmdBet(message *discordgo.MessageCreate, args []string) {
 
 func cmdCard(message *discordgo.MessageCreate, args []string) {
 	card := cards.GenerateCard()
-	state.SendReply(message.ChannelID, fmt.Sprintf("%v", card))
+	state.SendReply(message.ChannelID, card.String())
 }
