@@ -5,7 +5,9 @@ go:
 
 before_script: go get -t ./...
 
-script: go build -v
+script: 
+  - go build -v
+  - go test ./queue
 
 after_success:
   - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"

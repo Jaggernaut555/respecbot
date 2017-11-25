@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"flag"
@@ -28,7 +28,7 @@ var (
 	logger         *log.Logger
 )
 
-func init() {
+func initBot() {
 	flag.StringVar(&discordToken, "t", "", "Discord Authentication token")
 	flag.StringVar(&dbPassword, "p", "", "Password for database user")
 	purge := flag.Bool("purge", false, "Use this flag to purge the database. Must be used with -p")
@@ -41,7 +41,7 @@ func init() {
 	InitCmds()
 	InitRules()
 	InitBets()
-	InitChannels()
+	initChannels()
 
 	if *purge {
 		if dbPassword != "" {
@@ -56,14 +56,15 @@ func init() {
 	}
 }
 
-func InitChannels() {
+func initChannels() {
 	Channels = map[string]bool{}
 	Servers = map[string]bool{}
 
 	dbLoadActiveChannels(&Channels, &Servers)
 }
 
-func main() {
+func LaunchBot() {
+	initBot()
 	Log("TIME TO RESPEC...")
 
 	if discordToken == "" {
@@ -106,10 +107,10 @@ func announceReturn() {
 				panic(err)
 			}
 			if active, ok := Servers[channel.GuildID]; active && ok {
-				initLosers(channel.GuildID)
-				initTopUsers(channel.GuildID)
 				reply := fmt.Sprintf("I'm back, bitches, and I'm running %v", Version)
 				SendReply(k, reply)
+				initLosers(channel.GuildID)
+				initTopUsers(channel.GuildID)
 			}
 		}
 	}
