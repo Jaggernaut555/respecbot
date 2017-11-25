@@ -11,10 +11,12 @@ var (
 	Servers  map[string]bool
 )
 
-func InitChannels() {
+func init() {
 	Channels = map[string]bool{}
 	Servers = map[string]bool{}
+}
 
+func InitChannels() {
 	db.LoadActiveChannels(&Channels, &Servers)
 }
 

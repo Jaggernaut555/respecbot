@@ -36,6 +36,12 @@ const (
 	goodChange = iota
 )
 
+const (
+	rulingClassRoleName = "Ruling Class"
+	topUserRoleName     = "Supreme Ruler"
+	losersRoleNAme      = "Losers"
+)
+
 var (
 	totalRespec       int
 	supremeRuler      string
@@ -61,13 +67,29 @@ func InitRatings() {
 	totalRespec = db.GetTotalRespec()
 }
 
-func InitLosers(guildID string) {
-	guild, err := state.Session.Guild(guildID)
+func InitChannel(channelID string) (err error) {
+	channel, err := state.Session.Channel(channelID)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	loserRoleID[guildID] = getRoleID(guildID, "Losers")
+	db.AddChannel(channel, true)
+	state.Channels[channel.ID] = true
+	state.Servers[channel.GuildID] = true
+	if err = initLosers(channel.GuildID); err != nil {
+		return err
+	}
+	err = initTopUsers(channel.GuildID)
+	return err
+}
+
+func initLosers(guildID string) (err error) {
+	guild, err := state.Session.Guild(guildID)
+	if err != nil {
+		return err
+	}
+
+	loserRoleID[guildID] = getRoleID(guildID, losersRoleNAme)
 
 	for _, v := range guild.Members {
 		if v.User.Bot {
@@ -79,15 +101,16 @@ func InitLosers(guildID string) {
 			isNotALoser(guildID, v.User)
 		}
 	}
+	return nil
 }
 
-func InitTopUsers(guildID string) {
+func initTopUsers(guildID string) (err error) {
 	guild, err := state.Session.Guild(guildID)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	supremeID := getRoleID(guildID, "Supreme Ruler")
+	supremeID := getRoleID(guildID, topUserRoleName)
 	if supremeID != "" {
 		rulerRoleID[guildID] = supremeID
 
@@ -111,25 +134,30 @@ func InitTopUsers(guildID string) {
 		}
 	}
 
-	initRulingClass(guildID)
+	return initRulingClass(guildID)
 }
 
-func initRulingClass(guildID string) {
-	rulingID := getRoleID(guildID, "Ruling Class")
+func initRulingClass(guildID string) (err error) {
+	rulingID := getRoleID(guildID, rulingClassRoleName)
 
 	if rulingID != "" {
 		rulingClassRoleID[guildID] = rulingID
 
-		checkRulingClass(guildID)
+		return checkRulingClass(guildID)
 	}
+	return nil
 }
 
 func checkTopUser(guildID string, user *discordgo.User) {
 	roleID, ok := rulerRoleID[guildID]
-	if !ok {
-		return
+	if !ok && roleID == "" {
+		roleID = getRoleID(guildID, topUserRoleName)
+		if roleID == "" {
+			return
+		}
+		rulerRoleID[guildID] = roleID
 	}
-	ok = (supremeRuler != "")
+
 	if db.UserIsTop(user) && !ok {
 		state.Session.GuildMemberRoleAdd(guildID, user.ID, roleID)
 		supremeRuler = user.ID
@@ -147,11 +175,17 @@ func checkTopUser(guildID string, user *discordgo.User) {
 	}
 }
 
-func checkRulingClass(guildID string) {
+func checkRulingClass(guildID string) (err error) {
 	guild, err := state.Session.Guild(guildID)
 	roleID, ok := rulingClassRoleID[guildID]
-	if err != nil || !ok {
-		return
+	if err != nil {
+		return err
+	} else if !ok && roleID == "" {
+		roleID = getRoleID(guildID, rulingClassRoleName)
+		if roleID == "" {
+			return nil
+		}
+		rulingClassRoleID[guildID] = roleID
 	}
 
 	newRulingClass := make(map[string]bool)
@@ -175,17 +209,32 @@ func checkRulingClass(guildID string) {
 			state.Session.GuildMemberRoleRemove(guildID, v.User.ID, roleID)
 		}
 	}
+	return nil
 }
 
 func isALoser(guildID string, user *discordgo.User) {
-	if role, ok := loserRoleID[guildID]; ok {
-		state.Session.GuildMemberRoleAdd(guildID, user.ID, role)
+	if roleID, ok := loserRoleID[guildID]; ok {
+		state.Session.GuildMemberRoleAdd(guildID, user.ID, roleID)
+	} else {
+		roleID = getRoleID(guildID, losersRoleNAme)
+		if roleID == "" {
+			return
+		}
+		loserRoleID[guildID] = roleID
+		state.Session.GuildMemberRoleAdd(guildID, user.ID, roleID)
 	}
 }
 
 func isNotALoser(guildID string, user *discordgo.User) {
-	if role, ok := loserRoleID[guildID]; ok {
-		state.Session.GuildMemberRoleRemove(guildID, user.ID, role)
+	if roleID, ok := loserRoleID[guildID]; ok {
+		state.Session.GuildMemberRoleRemove(guildID, user.ID, roleID)
+	} else {
+		roleID = getRoleID(guildID, losersRoleNAme)
+		if roleID == "" {
+			return
+		}
+		loserRoleID[guildID] = roleID
+		state.Session.GuildMemberRoleRemove(guildID, user.ID, roleID)
 	}
 }
 

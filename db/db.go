@@ -111,7 +111,6 @@ func DBSetup(dbPassword string, purge bool) {
 			os.Exit(1)
 		}
 	}
-
 }
 
 func createTables(e *xorm.Engine) {
@@ -385,28 +384,22 @@ func GetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time.T
 	return
 }
 
-func RecordBet(b *DBBet) {
-	/*
-		b *Bet
-		bet := DBBet{ChannelID: b.channelID, Winner: b.winner.ID, StarterID: b.author.ID, Bet: b.respec, Pot: b.totalRespec, Time: b.time}
-		var users []BetUsers
+func RecordBet(b DBBet, users []string) {
+	_, err := engine.Table("Bet").Insert(b)
+	if err != nil {
+		panic(err)
+	}
+	_, err = engine.Table("Bet").Get(&b)
+	if err != nil {
+		panic(err)
+	}
 
-		_, err := engine.Table("Bet").Insert(bet)
-		if err != nil {
+	fmt.Println(b.ID)
+	for _, v := range users {
+		if _, err := engine.Insert(&BetUsers{UserID: v, BetID: b.ID}); err != nil {
 			panic(err)
 		}
-		_, err = engine.Table("Bet").Get(&bet)
-		if err != nil {
-			panic(err)
-		}
-
-		for _, v := range b.users {
-			users = append(users, BetUsers{BetID: bet.ID, UserID: v.ID})
-		}
-		if _, err := engine.Insert(&users); err != nil {
-			panic(err)
-		}
-	*/
+	}
 }
 
 func LoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool) {

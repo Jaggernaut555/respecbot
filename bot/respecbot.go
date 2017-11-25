@@ -11,7 +11,6 @@ import (
 	"github.com/Jaggernaut555/respecbot/db"
 	"github.com/Jaggernaut555/respecbot/state"
 
-	"github.com/Jaggernaut555/respecbot/bet"
 	"github.com/Jaggernaut555/respecbot/logging"
 	"github.com/Jaggernaut555/respecbot/rate"
 	"github.com/bwmarrin/discordgo"
@@ -35,10 +34,6 @@ func initBot() {
 	db.DBSetup(dbPassword, *purge)
 	state.InitChannels()
 	rate.InitRatings()
-	InitCmds()
-	rate.InitRules()
-	bet.InitBets()
-
 }
 
 func LaunchBot() {
@@ -87,8 +82,7 @@ func announceReturn() {
 			if active, ok := state.Servers[channel.GuildID]; active && ok {
 				reply := fmt.Sprintf("I'm back, bitches, and I'm running %v", Version)
 				state.SendReply(k, reply)
-				rate.InitLosers(channel.GuildID)
-				rate.InitTopUsers(channel.GuildID)
+				rate.InitChannel(channel.ID)
 			}
 		}
 	}

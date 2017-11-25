@@ -34,8 +34,8 @@ type CmdFuncsType map[string]CmdFuncHelpType
 // CmdFuncs Commands to functions map
 var CmdFuncs CmdFuncsType
 
-// InitCmds Initializes the cmds map
-func InitCmds() {
+// Initializes the cmds map
+func init() {
 	CmdFuncs = CmdFuncsType{
 		"help":     CmdFuncHelpType{cmdHelp, "Prints this list", false},
 		"lookatme": CmdFuncHelpType{cmdHere, "Fuck off, user", false},
@@ -96,12 +96,8 @@ func cmdHere(message *discordgo.MessageCreate, args []string) {
 		state.SendReply(channel.ID, "Yeah")
 		return
 	}
-	state.Channels[channel.ID] = true
-	state.Servers[channel.GuildID] = true
-	db.AddChannel(channel, true)
 	state.SendReply(channel.ID, "Fuck on me")
-	rate.InitLosers(channel.GuildID)
-	rate.InitTopUsers(channel.GuildID)
+	rate.InitChannel(channel.ID)
 }
 
 func cmdNotHere(message *discordgo.MessageCreate, args []string) {

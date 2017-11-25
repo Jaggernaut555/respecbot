@@ -23,7 +23,7 @@ var (
 	channelLastMessage map[string]*discordgo.Message
 )
 
-func InitRules() {
+func init() {
 	rules = []Rule{lastPost,
 		respecLetters,
 		respecLength,
