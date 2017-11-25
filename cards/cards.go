@@ -29,7 +29,7 @@ func New(shuffleTheDeck bool) Deck {
 	var newDeck Deck
 	for i := 0; i < numSuits; i++ {
 		for j := 0; j < numCardsPerSuit; j++ {
-			newDeck.cards = append(newDeck.cards, buildCard(i, j))
+			newDeck.AddCard(buildCard(i, j), false)
 		}
 	}
 
