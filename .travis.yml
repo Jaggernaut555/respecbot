@@ -3,17 +3,19 @@ language: go
 go:
   - 1.9
 
-before_script: go get -t ./...
-
-script: 
-  - go build -v
-  - go test ./queue
-
-after_success:
-  - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
-
 stages:
   - test
+  - name: deploy
+    if: branch = master
+
+jobs:
+  include:
+    - stage: test
+      script: 
+        - go test ./...
+    - stage: deploy
+      script:
+        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
 
 notifications:
   email:

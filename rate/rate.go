@@ -27,7 +27,7 @@ const (
 	correctUsageValue = 2
 	reactionValue     = 2
 	mentionValue      = 3
-	chatLimiter       = 111
+	chatLimiter       = 166
 )
 
 const (

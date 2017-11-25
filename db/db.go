@@ -54,9 +54,7 @@ type DBBet struct {
 	ID        uint64    `xorm:"pk autoincr"`
 	ChannelID string    `xorm:"not null"`
 	StarterID string    `xorm:"not null"`
-	Winner    string    `xorm:"not null"`
 	Pot       int       `xorm:"default 0"`
-	Bet       int       `xorm:"default 0"`
 	Time      time.Time `xorm:"not null"`
 }
 
@@ -68,6 +66,8 @@ func (*DBBet) TableName() string {
 type BetUsers struct {
 	BetID  uint64 `xorm:"pk"`
 	UserID string `xorm:"varchar(50) pk"`
+	Bet    int    `xorm:"default 0"`
+	Won    int    `xorm:"default 0"`
 }
 
 type joinReactionMessage struct {
@@ -384,7 +384,7 @@ func GetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time.T
 	return
 }
 
-func RecordBet(b DBBet, users []string) {
+func RecordBet(b DBBet, users []BetUsers) {
 	_, err := engine.Table("Bet").Insert(b)
 	if err != nil {
 		panic(err)
@@ -394,9 +394,8 @@ func RecordBet(b DBBet, users []string) {
 		panic(err)
 	}
 
-	fmt.Println(b.ID)
 	for _, v := range users {
-		if _, err := engine.Insert(&BetUsers{UserID: v, BetID: b.ID}); err != nil {
+		if _, err := engine.Insert(&BetUsers{UserID: v.UserID, BetID: b.ID, Bet: v.Bet, Won: v.Won}); err != nil {
 			panic(err)
 		}
 	}
