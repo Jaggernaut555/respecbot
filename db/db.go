@@ -2,10 +2,11 @@ package db
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"time"
+
+	"github.com/Jaggernaut555/respecbot/logging"
 
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/go-sql-driver/mysql"
@@ -75,23 +76,35 @@ type joinReactionMessage struct {
 	Message  `xorm:"extends"`
 }
 
-const (
-	dbName = "respecdb"
-	dbUser = "respecbot"
-)
+const ()
 
 var (
-	dbPassword string
-
 	engine *xorm.Engine
 )
 
-func DBSetup(dbPassword string, purge bool) {
+//Setup Start the database with the given password, purge will delete every entry in the database and exit app
+func Setup(dbName, dbUsername, dbPassword string, purge bool) {
 	engine = &xorm.Engine{}
 
-	e, err := xorm.NewEngine("mysql", dbUser+":"+dbPassword+"@/"+dbName+"?charset=utf8mb4")
+	if dbPassword == "" {
+		logging.Err("Blank Database Password")
+		os.Exit(1)
+	}
+
+	if dbName == "" {
+		logging.Err("Blank Database Name")
+		os.Exit(1)
+	}
+
+	if dbUsername == "" {
+		logging.Err("Blank Database Username")
+		os.Exit(1)
+	}
+
+	e, err := xorm.NewEngine("mysql", dbUsername+":"+dbPassword+"@/"+dbName+"?charset=utf8mb4")
 	if err != nil {
-		panic(err)
+		logging.Err(err.Error())
+		os.Exit(1)
 	}
 
 	engine = e
@@ -418,7 +431,7 @@ func LoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool) {
 
 func purgeDB() error {
 	engine.ShowSQL(true)
-	log.Println("Purging Database")
+	logging.Log("Purging Database")
 	var users []User
 	var messages []Message
 	var reactions []Reaction

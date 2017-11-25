@@ -21,17 +21,21 @@ import (
 // Global vars
 var (
 	discordToken string
+	dbName       string
 	dbPassword   string
+	dbUsername   string
 )
 
 func initBot() {
 	flag.StringVar(&discordToken, "t", "", "Discord Authentication token")
-	flag.StringVar(&dbPassword, "p", "", "Password for database user")
+	flag.StringVar(&dbPassword, "dbp", "", "Password for database user")
+	flag.StringVar(&dbName, "db", "respecdb", "Database to use")
+	flag.StringVar(&dbUsername, "dbu", "respecbot", "Username of database user")
 	purge := flag.Bool("purge", false, "Use this flag to purge the database. Must be used with -p")
 
 	flag.Parse()
 
-	db.DBSetup(dbPassword, *purge)
+	db.Setup(dbName, dbUsername, dbPassword, *purge)
 	state.InitChannels()
 	rate.InitRatings()
 }
