@@ -1,4 +1,4 @@
-package bot
+package bet
 
 import (
 	"fmt"
@@ -7,6 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Jaggernaut555/respecbot/db"
+	"github.com/Jaggernaut555/respecbot/logging"
+	"github.com/Jaggernaut555/respecbot/rate"
+	"github.com/Jaggernaut555/respecbot/state"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -49,7 +53,7 @@ func InitBets() {
 	}
 }
 
-func bet(message *discordgo.Message, args []string) {
+func BetCmd(message *discordgo.Message, args []string) {
 	/*
 		format
 		bet 50 @user1 @user2 ... (must have enough score, cap of 50?)
@@ -74,7 +78,7 @@ func bet(message *discordgo.Message, args []string) {
 		reply += "'bet cancel' - Cancel the active bet\n"
 		reply += "(Only the bet creator can start/cancel the bet)"
 		reply += "```"
-		SendReply(message.ChannelID, reply)
+		state.SendReply(message.ChannelID, reply)
 		return
 	}
 
@@ -132,11 +136,11 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 	// validate user can call
 	case "call":
 		if !userStatus && ok && !b.started {
-			available := dbGetUserRespec(author)
+			available := db.GetUserRespec(author)
 			if available >= b.respec {
 				b.state <- betMessage{user: author, arg: "call"}
 			} else {
-				SendReply(message.ChannelID, "Not enough respec to call")
+				state.SendReply(message.ChannelID, "Not enough respec to call")
 			}
 		}
 
@@ -151,7 +155,7 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 
 	default:
 		reply := fmt.Sprintf("Not a valid for active bet, use call/lose/start/cancel/status")
-		SendReply(message.ChannelID, reply)
+		state.SendReply(message.ChannelID, reply)
 		b.state <- betMessage{user: author, arg: "invalid"}
 	}
 }
@@ -159,15 +163,15 @@ func activeBetCommand(mux *sync.Mutex, b *Bet, author *discordgo.User, message *
 func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Message, args []string) {
 	// bet does not exist, check if valid bet then create it
 	// validate user has enough respec to create bet
-	available := dbGetUserRespec(author)
+	available := db.GetUserRespec(author)
 	num, err := strconv.Atoi(args[1])
 	if err != nil || num < 1 || available < num {
 		reply := fmt.Sprintf("Invalid wager")
-		SendReply(message.ChannelID, reply)
+		state.SendReply(message.ChannelID, reply)
 		return
 	}
 
-	channel, err := DiscordSession.Channel(message.ChannelID)
+	channel, err := state.Session.Channel(message.ChannelID)
 	if err != nil {
 		return
 	}
@@ -201,13 +205,13 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 
 	if len(b.users) < 1 && !b.open {
 		reply := "No users can participate in this bet"
-		SendReply(b.channelID, reply)
+		state.SendReply(b.channelID, reply)
 		return
 	}
 
 	b.userStatus[author.ID] = true
 	b.users[author.ID] = author
-	addRespec(b.guildID, b.author, -b.respec)
+	rate.AddRespec(b.guildID, b.author, -b.respec)
 
 	if mux != betMuxes[message.ChannelID] {
 		return
@@ -219,7 +223,7 @@ func createBet(mux *sync.Mutex, author *discordgo.User, message *discordgo.Messa
 	go startBetTimer(b.state)
 
 	reply := fmt.Sprintf("%v started a bet of %v", author.String(), b.respec)
-	Log(reply)
+	logging.Log(reply)
 }
 
 func startBetTimer(c chan betMessage) {
@@ -229,14 +233,14 @@ func startBetTimer(c chan betMessage) {
 }
 
 func appendRoles(message *discordgo.Message, b *Bet) {
-	channel, err := DiscordSession.Channel(message.ChannelID)
+	channel, err := state.Session.Channel(message.ChannelID)
 	if err != nil {
 		panic(err)
 	}
 	mentionedRoles := message.MentionRoles
 	var roleUsers []*discordgo.User
 
-	guild, _ := DiscordSession.Guild(channel.GuildID)
+	guild, _ := state.Session.Guild(channel.GuildID)
 
 	for _, v := range mentionedRoles {
 		roleUsers = append(roleUsers, roleHelper(guild, v, b.respec)...)
@@ -264,7 +268,7 @@ func roleHelper(guild *discordgo.Guild, roleID string, respecNeeded int) (users 
 }
 
 func userCanBet(user *discordgo.User, respecNeeded int) bool {
-	if available := dbGetUserRespec(user); available >= respecNeeded || !isBot(user) {
+	if available := db.GetUserRespec(user); available >= respecNeeded || !user.Bot {
 		return true
 	}
 	return false
@@ -312,9 +316,9 @@ Loop:
 
 	if b.winner != nil && len(b.users) > 1 {
 		betWon(b)
-		Log(fmt.Sprintf("Bet ended. %v won %v respec", b.winner, b.totalRespec-b.respec))
+		logging.Log(fmt.Sprintf("Bet ended. %v won %v respec", b.winner, b.totalRespec-b.respec))
 		winnerCard(b)
-		dbRecordBet(b)
+		recordBet(b)
 	} else {
 		cancelBet(b)
 		deleteEmbed(b)
@@ -332,9 +336,9 @@ func callBet(b *Bet, user *discordgo.User) {
 	b.users[user.ID] = user
 	b.totalRespec += b.respec
 
-	Log(fmt.Sprintf("%+v called", user.String()))
+	logging.Log(fmt.Sprintf("%+v called", user.String()))
 
-	addRespec(b.guildID, user, -b.respec)
+	rate.AddRespec(b.guildID, user, -b.respec)
 }
 
 func loseBet(b *Bet, user *discordgo.User) {
@@ -343,7 +347,7 @@ func loseBet(b *Bet, user *discordgo.User) {
 	}
 	b.userStatus[user.ID] = false
 
-	Log(fmt.Sprintf("%+v lost", user.String()))
+	logging.Log(fmt.Sprintf("%+v lost", user.String()))
 }
 
 func dropOut(b *Bet, user *discordgo.User) {
@@ -353,17 +357,17 @@ func dropOut(b *Bet, user *discordgo.User) {
 	b.userStatus[user.ID] = false
 	b.totalRespec -= b.respec
 
-	Log(fmt.Sprintf("%+v dropped out", user.String()))
+	logging.Log(fmt.Sprintf("%+v dropped out", user.String()))
 
-	addRespec(b.guildID, user, b.respec)
+	rate.AddRespec(b.guildID, user, b.respec)
 }
 
 func betWon(b *Bet) {
-	addRespec(b.guildID, b.winner, b.totalRespec)
+	rate.AddRespec(b.guildID, b.winner, b.totalRespec)
 
 	for _, v := range b.users {
 		if v.ID != b.winner.ID {
-			addRespec(b.guildID, v, -b.respec)
+			rate.AddRespec(b.guildID, v, -b.respec)
 		}
 	}
 }
@@ -374,7 +378,7 @@ func cancelBet(b *Bet) {
 	}
 	for k, v := range b.userStatus {
 		if v {
-			addRespec(b.guildID, b.users[k], b.respec)
+			rate.AddRespec(b.guildID, b.users[k], b.respec)
 			b.userStatus[k] = false
 		}
 		delete(b.userStatus, k)
@@ -384,8 +388,8 @@ func cancelBet(b *Bet) {
 
 	b.started = true
 	b.cancelled = true
-	SendReply(b.channelID, reply)
-	Log(reply)
+	state.SendReply(b.channelID, reply)
+	logging.Log(reply)
 }
 
 func startBet(b *Bet) {
@@ -405,8 +409,8 @@ func startBet(b *Bet) {
 	if count < 2 {
 		b.state <- betMessage{user: nil, arg: "cancel"}
 		reply := "Not enough users entered the bet"
-		SendReply(b.channelID, reply)
-		Log(reply)
+		state.SendReply(b.channelID, reply)
+		logging.Log(reply)
 		return
 	}
 	go betEndTimer(b.state)
@@ -414,7 +418,7 @@ func startBet(b *Bet) {
 	timeStamp := fmt.Sprintf(b.endTime.Format("15:04:05"))
 	reply := fmt.Sprintf("Bet started: Total pot:%v Must end before %v.", b.totalRespec, timeStamp)
 
-	Log(reply)
+	logging.Log(reply)
 }
 
 func checkBetReady(b *Bet) bool {
@@ -488,7 +492,7 @@ func activeBetEmbed(b *Bet) {
 		embed.Fields = append(embed.Fields, field)
 	}
 
-	msg := SendEmbed(b.channelID, embed)
+	msg := state.SendEmbed(b.channelID, embed)
 
 	if b.announcement != nil {
 		deleteEmbed(b)
@@ -523,7 +527,7 @@ func winnerCard(b *Bet) {
 		embed.Fields = append(embed.Fields, field)
 	}
 
-	msg := SendEmbed(b.channelID, embed)
+	msg := state.SendEmbed(b.channelID, embed)
 
 	if b.announcement != nil {
 		deleteEmbed(b)
@@ -533,7 +537,13 @@ func winnerCard(b *Bet) {
 }
 
 func deleteEmbed(b *Bet) {
-	DiscordSession.ChannelMessageDelete(b.announcement.ChannelID, b.announcement.ID)
+	state.Session.ChannelMessageDelete(b.announcement.ChannelID, b.announcement.ID)
+}
+
+func recordBet(b *Bet) {
+	var dbbet db.DBBet
+
+	db.RecordBet(&dbbet)
 }
 
 // multiple pot winners?

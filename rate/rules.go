@@ -1,9 +1,10 @@
-package bot
+package rate
 
 import (
 	"math/big"
 	"strings"
 
+	"github.com/Jaggernaut555/respecbot/db"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -145,12 +146,12 @@ func respecLetters(author *discordgo.User, message *discordgo.Message) (respec i
 // fuck spammers and afk's
 func respecTime(author *discordgo.User, message *discordgo.Message) (respec int) {
 	timeStamp, _ := message.Timestamp.Parse()
-	if oldTime, ok := dbGetUserLastMessageTime(author.String()); ok {
+	if oldTime, ok := db.GetUserLastMessageTime(author.String()); ok {
 		timeDelta := timeStamp.Sub(oldTime)
 		if timeDelta.Seconds() < 1.5 {
 			respec -= smallValue
 		} else if timeDelta.Hours() > 6 {
-			available := dbGetUserRespec(author)
+			available := db.GetUserRespec(author)
 
 			respec -= int(timeDelta.Hours()) * minValue
 

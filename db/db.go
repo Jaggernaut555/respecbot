@@ -1,6 +1,9 @@
-package bot
+package db
 
 import (
+	"fmt"
+	"log"
+	"os"
 	"sort"
 	"time"
 
@@ -72,9 +75,18 @@ type joinReactionMessage struct {
 	Message  `xorm:"extends"`
 }
 
-var engine *xorm.Engine
+const (
+	dbName = "respecdb"
+	dbUser = "respecbot"
+)
 
-func InitDB() {
+var (
+	dbPassword string
+
+	engine *xorm.Engine
+)
+
+func DBSetup(dbPassword string, purge bool) {
 	engine = &xorm.Engine{}
 
 	e, err := xorm.NewEngine("mysql", dbUser+":"+dbPassword+"@/"+dbName+"?charset=utf8mb4")
@@ -88,21 +100,18 @@ func InitDB() {
 
 	createTables(engine)
 
-	var b *Bet
-	b = new(Bet)
-	b.channelID = "channel"
-	b.guildID = "guild"
-	b.totalRespec = 5
-	b.respec = 5
-	b.author = new(discordgo.User)
-	b.author.ID = "author"
-	b.winner = new(discordgo.User)
-	b.winner.ID = "winner"
-	b.time = time.Now()
+	if purge {
+		if dbPassword != "" {
+			if err := purgeDB(); err != nil {
+				panic(err)
+			}
+			os.Exit(1)
+		} else {
+			fmt.Print("Please provide a valid database password with -p")
+			os.Exit(1)
+		}
+	}
 
-	dbRecordBet(b)
-
-	Log("Database running")
 }
 
 func createTables(e *xorm.Engine) {
@@ -130,7 +139,7 @@ func createTables(e *xorm.Engine) {
 	}
 }
 
-func dbGetTotalRespec() (total int) {
+func GetTotalRespec() (total int) {
 	var user User
 
 	temp, err := engine.SumInt(user, "Respec")
@@ -141,7 +150,7 @@ func dbGetTotalRespec() (total int) {
 	return int(temp)
 }
 
-func dbGetUserRespec(discordUser *discordgo.User) (respec int) {
+func GetUserRespec(discordUser *discordgo.User) (respec int) {
 	user := &User{Username: discordUser.String(), ID: discordUser.ID}
 	has, err := engine.Get(user)
 	if err != nil {
@@ -153,7 +162,7 @@ func dbGetUserRespec(discordUser *discordgo.User) (respec int) {
 	return
 }
 
-func dbGetTopUser() (userID string) {
+func GetTopUser() (userID string) {
 	user := new(User)
 	has, err := engine.Table("User").Select("*").Desc("Respec").Get(user)
 	if err != nil {
@@ -165,7 +174,7 @@ func dbGetTopUser() (userID string) {
 	return ""
 }
 
-func dbUserIsTop(discordUser *discordgo.User) bool {
+func UserIsTop(discordUser *discordgo.User) bool {
 	user := new(User)
 	has, err := engine.Table("User").Select("*").Desc("Respec").Get(user)
 	if err != nil {
@@ -177,12 +186,12 @@ func dbUserIsTop(discordUser *discordgo.User) bool {
 	return false
 }
 
-func dbGetRulingClass(list *map[string]bool) {
+func GetRulingClass(list *map[string]bool) {
 	var users []User
 	if err := engine.Find(&users); err != nil {
 		panic(err)
 	}
-	total := float64(dbGetTotalRespec())
+	total := float64(GetTotalRespec())
 	var pairs pairList
 	for _, v := range users {
 		pairs = append(pairs, pair{Key: v.ID, Value: v.Respec})
@@ -201,7 +210,7 @@ func dbGetRulingClass(list *map[string]bool) {
 	}
 }
 
-func dbLoadRespec(list *map[string]int) {
+func LoadRespec(list *map[string]int) {
 	var users []User
 	if err := engine.Find(&users); err != nil {
 		panic(err)
@@ -211,7 +220,7 @@ func dbLoadRespec(list *map[string]int) {
 	}
 }
 
-func dbGainRespec(discordUser *discordgo.User, respec int) {
+func GainRespec(discordUser *discordgo.User, respec int) {
 	user := &User{Username: discordUser.String(), ID: discordUser.ID}
 	has, err := engine.Get(user)
 	if err != nil {
@@ -230,14 +239,14 @@ func dbGainRespec(discordUser *discordgo.User, respec int) {
 	}
 }
 
-func dbNewMessage(discordUser *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
+func NewMessage(discordUser *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
 	msg := &Message{ID: message.ID, Content: message.Content, ChannelID: message.ChannelID, Respec: numRespec, UserID: discordUser.String(), Time: timeStamp}
 	if _, err := engine.Insert(msg); err != nil {
 		panic(err)
 	}
 }
 
-func dbMessageExists(messageID string) (has bool) {
+func MessageExists(messageID string) (has bool) {
 	has, err := engine.Exist(&Message{ID: messageID})
 	if err != nil {
 		panic(err)
@@ -245,7 +254,7 @@ func dbMessageExists(messageID string) (has bool) {
 	return
 }
 
-func dbAddChannel(discordChannel *discordgo.Channel, active bool) {
+func AddChannel(discordChannel *discordgo.Channel, active bool) {
 	channel := &Channel{ID: discordChannel.ID, GuildID: discordChannel.GuildID}
 	has, err := engine.Get(channel)
 	if err != nil {
@@ -263,7 +272,7 @@ func dbAddChannel(discordChannel *discordgo.Channel, active bool) {
 	}
 }
 
-func dbGetUserLastMessageTime(userID string) (timeStamp time.Time, ok bool) {
+func GetUserLastMessageTime(userID string) (timeStamp time.Time, ok bool) {
 	message := Message{UserID: userID}
 	has, err := engine.Select("UserId, max(Time) AS Time").GroupBy("UserID").Get(&message)
 	if err != nil {
@@ -276,14 +285,14 @@ func dbGetUserLastMessageTime(userID string) (timeStamp time.Time, ok bool) {
 	return
 }
 
-func dbMention(giver *discordgo.User, receiver *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
+func AddMention(giver *discordgo.User, receiver *discordgo.User, message *discordgo.Message, numRespec int, timeStamp time.Time) {
 	mention := Mention{GiverID: giver.String(), ReceiverID: receiver.String(), MessageID: message.ID, Respec: numRespec, Time: timeStamp}
 	if _, err := engine.Insert(mention); err != nil {
 		panic(err)
 	}
 }
 
-func dbGetUserLastMentionedTime(userID string) (timeStamp time.Time, ok bool) {
+func GetUserLastMentionedTime(userID string) (timeStamp time.Time, ok bool) {
 	mention := Mention{ReceiverID: userID}
 	has, err := engine.Select("ReceiverID, max(Time) AS Time").GroupBy("ReceiverID").Get(&mention)
 	if err != nil {
@@ -296,7 +305,7 @@ func dbGetUserLastMentionedTime(userID string) (timeStamp time.Time, ok bool) {
 	return
 }
 
-func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
+func ReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
 	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Content: rctn.Emoji.ID}
 
 	has, err := engine.Exist(&reaction)
@@ -317,7 +326,7 @@ func dbReactionAdd(discordUser *discordgo.User, rctn *discordgo.MessageReaction,
 	}
 }
 
-func dbGetUserLastReactionAddTime(giverID, receiverID string) (timeStamp time.Time, ok bool) {
+func GetUserLastReactionAddTime(giverID, receiverID string) (timeStamp time.Time, ok bool) {
 	rm := joinReactionMessage{}
 
 	has, err := engine.Table("Reaction").Alias("r").Select("r.UserID, m.UserID, max(r.Time) AS Time").
@@ -336,7 +345,7 @@ func dbGetUserLastReactionAddTime(giverID, receiverID string) (timeStamp time.Ti
 	return
 }
 
-func dbReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
+func ReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReaction, timeStamp time.Time) {
 	reaction := Reaction{MessageID: rctn.MessageID, UserID: discordUser.String(), Content: rctn.Emoji.ID}
 
 	has, err := engine.Get(&reaction)
@@ -357,7 +366,7 @@ func dbReactionRemove(discordUser *discordgo.User, rctn *discordgo.MessageReacti
 	}
 }
 
-func dbGetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time.Time, ok bool) {
+func GetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time.Time, ok bool) {
 	rm := joinReactionMessage{}
 
 	has, err := engine.Table("Reaction").Alias("r").Select("r.UserID, m.UserID, max(r.Removed) AS Removed").
@@ -376,28 +385,31 @@ func dbGetUserLastReactionRemoveTime(giverID, receiverID string) (timeStamp time
 	return
 }
 
-func dbRecordBet(b *Bet) {
-	bet := DBBet{ChannelID: b.channelID, Winner: b.winner.ID, StarterID: b.author.ID, Bet: b.respec, Pot: b.totalRespec, Time: b.time}
-	var users []BetUsers
+func RecordBet(b *DBBet) {
+	/*
+		b *Bet
+		bet := DBBet{ChannelID: b.channelID, Winner: b.winner.ID, StarterID: b.author.ID, Bet: b.respec, Pot: b.totalRespec, Time: b.time}
+		var users []BetUsers
 
-	_, err := engine.Table("Bet").Insert(bet)
-	if err != nil {
-		panic(err)
-	}
-	_, err = engine.Table("Bet").Get(&bet)
-	if err != nil {
-		panic(err)
-	}
+		_, err := engine.Table("Bet").Insert(bet)
+		if err != nil {
+			panic(err)
+		}
+		_, err = engine.Table("Bet").Get(&bet)
+		if err != nil {
+			panic(err)
+		}
 
-	for _, v := range b.users {
-		users = append(users, BetUsers{BetID: bet.ID, UserID: v.ID})
-	}
-	if _, err := engine.Insert(&users); err != nil {
-		panic(err)
-	}
+		for _, v := range b.users {
+			users = append(users, BetUsers{BetID: bet.ID, UserID: v.ID})
+		}
+		if _, err := engine.Insert(&users); err != nil {
+			panic(err)
+		}
+	*/
 }
 
-func dbLoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool) {
+func LoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool) {
 	var channels []Channel
 
 	if err := engine.Find(&channels); err != nil {
@@ -414,6 +426,7 @@ func dbLoadActiveChannels(chanList *map[string]bool, guildList *map[string]bool)
 
 func purgeDB() error {
 	engine.ShowSQL(true)
+	log.Println("Purging Database")
 	var users []User
 	var messages []Message
 	var reactions []Reaction
@@ -480,3 +493,14 @@ func purgeDB() error {
 
 	return nil
 }
+
+type pair struct {
+	Key   string
+	Value int
+}
+
+type pairList []pair
+
+func (p pairList) Len() int           { return len(p) }
+func (p pairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+func (p pairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
