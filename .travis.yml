@@ -13,8 +13,6 @@ before_install:
 
 stages:
   - test
-  - name: deploy
-    if: branch = master
 
 jobs:
   include:
@@ -23,9 +21,6 @@ jobs:
         - go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' ./... | xargs -L 1 sh -c
         - gover
         - goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken $COVERALLS_TOKEN
-    - stage: deploy
-      script:
-        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
 
 notifications:
   email:

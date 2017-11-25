@@ -1,0 +1,21 @@
+#Need to not runas ubuntu, seems bad.
+#This is very specified to the server I'm using, but I dunno how to do it.
+
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /
+hooks:
+  BeforeInstall:
+    - location: scripts/install_dependencies.sh
+      timeout: 300
+      runas: ubuntu
+  ApplicationStart:
+    - location: scripts/start_server.sh
+      timeout: 300
+      runas: ubuntu
+  ApplicationStop:
+    - location: scripts/stop_server.sh
+      timeout: 300
+      runas: ubuntu
