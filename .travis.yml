@@ -11,12 +11,11 @@ stages:
 jobs:
   include:
     - stage: test
-      before_script: go get -t ./...
       script: 
         - go test ./...
     - stage: deploy
       script:
-        - "curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook"
+        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
 
 notifications:
   email:
