@@ -5,115 +5,115 @@ import (
 	"reflect"
 )
 
-// SliceQueue ye
-type SliceQueue struct {
-	data      []interface{}
-	queueType reflect.Type
-}
-
-func newSliceQueue(data ...interface{}) (q *SliceQueue, err error) {
-	if len(data) == 0 {
-		err = fmt.Errorf("No data given to SliceQueue")
-		return nil, err
-	}
-	q = &SliceQueue{queueType: reflect.TypeOf(data[0])}
-
-	for _, v := range data {
-		err = q.push(v)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return q, nil
-}
-
-func (q *SliceQueue) push(data interface{}) (err error) {
-	if reflect.TypeOf(data) != q.queueType {
-		err = fmt.Errorf("Data not of consistent type:\nWanted:%v\nGot:%v", q.queueType, reflect.TypeOf(data))
-		return err
-	}
-	q.data = append(q.data, data)
-	return nil
-}
-
-func (q *SliceQueue) pop() (data interface{}, err error) {
-	if len(q.data) == 0 {
-		err = fmt.Errorf("No data in queue")
-		return nil, err
-	}
-	data = q.data[0]
-	q.data = q.data[1:]
-	return data, nil
-}
-
-func (q SliceQueue) peek() (data interface{}) {
-	if len(q.data) == 0 {
-		return nil
-	}
-	data = q.data[0]
-	return data
-}
-
 // ListQueue - It's a queue with linked lists dawg
 type ListQueue struct {
-	head      *node
-	tail      *node
-	queueType reflect.Type
+	root     *Node
+	dataType reflect.Type
+	length   int
 }
 
-type node struct {
-	next *node
-	data interface{}
+type Node struct {
+	next *Node
+	prev *Node
+	Data interface{}
 }
 
-func newListQueue(data ...interface{}) (q *ListQueue, err error) {
-	if len(data) == 0 {
-		err = fmt.Errorf("No data given to ListQueue")
-		return nil, err
-	}
-	q = &ListQueue{queueType: reflect.TypeOf(data[0])}
-
-	for _, v := range data {
-		err = q.push(v)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return q, nil
+func (n Node) String() string {
+	return fmt.Sprintf("%v", n.Data)
 }
 
-func (q *ListQueue) push(data interface{}) (err error) {
-	if reflect.TypeOf(data) != q.queueType {
-		err = fmt.Errorf("Data not of consistent type:\nWanted:%v\nGot:%v", q.queueType, reflect.TypeOf(data))
-		return err
+func (q ListQueue) String() string {
+	s := fmt.Sprintf("Length:%v, [", q.length)
+	for i := q.Start(); i != q.root; i = i.next {
+		s = fmt.Sprintf("%v%v,", s, i.String())
 	}
-	node := new(node)
-	node.data = data
-
-	if q.head == nil {
-		q.head = node
-		q.tail = node
-	} else {
-		q.tail.next = node
-		q.tail = node
-	}
-	return nil
+	s = fmt.Sprintf("%v]", s)
+	return s
 }
 
-func (q *ListQueue) pop() (data interface{}, err error) {
-	if q.head == nil {
-		err = fmt.Errorf("No data in queue")
-		return nil, err
-	}
-	data = q.head.data
-	q.head = q.head.next
-	return data, nil
+func (q ListQueue) End() *Node {
+	return q.root.prev
 }
 
-func (q ListQueue) peek() (data interface{}) {
-	if q.head == nil {
+func (q ListQueue) Start() *Node {
+	return q.root.next
+}
+
+func (q ListQueue) Length() int {
+	return q.length
+}
+
+func NewListQueue(dataType interface{}) (q *ListQueue) {
+	node := new(Node)
+	node.next = node
+	node.prev = node
+	node.Data = dataType
+	return &ListQueue{dataType: reflect.TypeOf(dataType), root: node}
+}
+
+//Remove Remove value at index of the queue
+func (q *ListQueue) Remove(index int) (node *Node) {
+	if q.length <= index || index < 0 || q.length <= 0 {
 		return nil
 	}
-	data = q.head.data
-	return data
+	if index == 0 {
+		return q.Pop()
+	}
+	node = q.Start()
+	for count := 0; count < index; count++ {
+		node = node.next
+	}
+
+	node.next.prev = node.prev
+	node.prev.next = node.next
+
+	node.next = nil
+	node.prev = nil
+	q.length--
+
+	return node
+}
+
+//Push Push data to top of the queue
+func (q *ListQueue) Push(data ...interface{}) *Node {
+	if len(data) == 0 {
+		return nil
+	}
+
+	for _, v := range data {
+		if reflect.TypeOf(v) != q.dataType {
+			continue
+		}
+		node := new(Node)
+		node.Data = v
+		node.prev = q.root.prev
+		node.next = q.root
+		node.next.prev = node
+		node.prev.next = node
+
+		q.length++
+	}
+	return q.End()
+}
+
+//Pop Take the top value from bottom of the queue
+func (q *ListQueue) Pop() (node *Node) {
+	if q.Start() == q.root {
+		return nil
+	}
+	node = q.Start()
+	node.next.prev = node.prev
+	node.prev.next = node.next
+	q.length--
+	node.next = nil
+	node.prev = nil
+	return node
+}
+
+//Peek Look at value on bottom of the queue
+func (q ListQueue) Peek() (node *Node) {
+	if q.Start() == q.root {
+		return nil
+	}
+	return q.Start()
 }

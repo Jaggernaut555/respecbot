@@ -1,16 +1,14 @@
 package queue
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestQueue(t *testing.T) {
-	var sq *SliceQueue
-	var lq *ListQueue
-	var serr error
-	var lerr error
+	var q *ListQueue
 
-	data1 := []interface{}{1, "lol"}
-	data2 := []interface{}{1, 2, 3}
-
+	data1 := []interface{}{1, "lol", 1.0}
+	data2 := []interface{}{1, 2, 3, 4}
 	data3String := []string{"a", "b", "c"}
 	for i := 0; i < 10; i++ {
 		data3String = append(data3String, data3String...)
@@ -20,78 +18,56 @@ func TestQueue(t *testing.T) {
 		data3 = append(data3, v)
 	}
 
-	sq, serr = newSliceQueue()
-	lq, lerr = newListQueue()
-	if sq != nil || serr == nil || lq != nil || lerr == nil {
-		t.Errorf("Could create queue with no data")
+	q = NewListQueue(data1[0])
+	if q.Start() != q.End() {
+		t.Errorf("Start/End don't work")
+	}
+	item := q.Peek()
+	if item != nil {
+		t.Errorf("Could peek at nothing")
+	}
+	q.Push(data1...)
+	if q.Length() > 1 {
+		t.Errorf("Could push mismatched types")
 	}
 
-	sq, serr = newSliceQueue(data1...)
-	lq, lerr = newListQueue(data1...)
-	if sq != nil || serr == nil {
-		t.Errorf("Could create queue with mismatched types")
+	q = NewListQueue(5)
+	if item = q.Remove(0); item != nil {
+		t.Error("Removed invalid index")
 	}
-	if lq != nil || lerr == nil {
-		t.Errorf("Could create queue with mismatched types")
+	for _, v := range data2 {
+		q.Push(v)
 	}
-
-	sq, serr = newSliceQueue(data2...)
-	lq, lerr = newListQueue(data2...)
-	if sq == nil || serr != nil {
-		t.Error(serr)
+	if q.Length() == 0 {
+		t.Errorf("Push failed")
 	}
-	if lq == nil || lerr != nil {
-		t.Error(lerr)
+	if q.Start() == q.End() {
+		t.Errorf("Start/End don't work")
 	}
-
-	_, serr = sq.pop()
-	_, lerr = lq.pop()
-	if serr != nil {
-		t.Error(serr)
+	item = q.Peek()
+	if item == nil {
+		t.Error("Cannot peek")
 	}
-	if lerr != nil {
-		t.Error(lerr)
+	item = q.Remove(2)
+	if item == nil || item.Data.(int) != 3 {
+		t.Error("Remove failed")
 	}
-
-	sq, serr = newSliceQueue(data3...)
-	lq, lerr = newListQueue(data3...)
-	if sq == nil || serr != nil {
-		t.Error(serr)
+	q.Pop()
+	item = q.Pop()
+	if item == nil {
+		t.Errorf("Could not pop")
 	}
-	if lq == nil || lerr != nil {
-		t.Error(lerr)
-	}
-}
-
-func BenchmarkSliceQueue(b *testing.B) {
-	setup := []interface{}{"a", "b", "c", "d", "e"}
-	data := []interface{}{}
-
-	for i := 0; i < 1000000; i++ {
-		data = append(data, setup)
+	item = q.Pop()
+	item = q.Pop()
+	item = q.Pop()
+	item = q.Pop()
+	item = q.Pop()
+	if item != nil {
+		t.Error("Could pop nothing")
 	}
 
-	q, err := newSliceQueue(data...)
-	if err != nil {
-		b.Error(err)
-	}
-
-	for i := 0; i < len(data); i++ {
-		q.peek()
-	}
-
-	for v, err := q.pop(); v != nil; v, err = q.pop() {
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	for _, v := range data {
-		err = q.push(v)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
+	q = NewListQueue(data3[0])
+	q.Push(data3...)
 }
 
 func BenchmarkListQueue(b *testing.B) {
@@ -102,29 +78,19 @@ func BenchmarkListQueue(b *testing.B) {
 		data = append(data, setup)
 	}
 
+	q := NewListQueue(data[0])
+
 	for _, v := range data {
 		data = append(data, v)
-	}
-
-	q, err := newListQueue(data...)
-	if err != nil {
-		b.Error(err)
+		q.Push(setup...)
 	}
 
 	for i := 0; i < len(data); i++ {
-		q.peek()
+		q.Peek()
 	}
 
-	for v, err := q.pop(); v != nil; v, err = q.pop() {
-		if err != nil {
-			b.Fatal(err)
-		}
+	for v := q.Pop(); v != nil; v = q.Pop() {
 	}
 
-	for _, v := range data {
-		err = q.push(v)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
+	q.Push(data...)
 }
