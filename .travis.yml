@@ -15,7 +15,7 @@ jobs:
         - go test ./...
     - stage: deploy
       script:
-        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
+        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
 
 notifications:
   email:
