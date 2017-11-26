@@ -3,6 +3,7 @@ TOKEN=$1
 BRANCH=$2
 PULLREQ=$3
 
+echo "START DEPLOY"
 case "$BRANCH" in
 "master" )
     if [[ $PULLREQ == 'false' ]]; then
@@ -22,3 +23,4 @@ case "$BRANCH" in
     echo "Not a staging branch"
     ;;
 esac
+echo "DEPLOY OVER"
