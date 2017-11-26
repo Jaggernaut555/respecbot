@@ -21,6 +21,13 @@ jobs:
         - go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' ./... | xargs -L 1 sh -c
         - gover
         - goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken $COVERALLS_TOKEN
+      deploy:
+        provider: script
+        script: scripts/deploy.sh $DEPLOY_TOKEN $TRAVIS_BRANCH $TRAVIS_PULL_REQUEST
+        on:
+          branch:
+            - master
+            - staging
 
 notifications:
   email:
