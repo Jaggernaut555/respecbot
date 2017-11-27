@@ -6,29 +6,33 @@ import (
 
 func TestQueue(t *testing.T) {
 	var q *ListQueue
+	var node *Node
 
 	data1 := []interface{}{1, "lol", 1.0}
-	data2 := []interface{}{1, 2, 3, 4}
-	data3String := []string{"a", "b", "c"}
-	for i := 0; i < 10; i++ {
-		data3String = append(data3String, data3String...)
-	}
+	data2 := []interface{}{1, 2, 3}
+	data3String := []string{"a", "b", "c", "d", "e"}
 	data3 := []interface{}{}
 	for _, v := range data3String {
 		data3 = append(data3, v)
 	}
 
+	q = NewListQueue(1)
+	node = q.Push()
+	if node != nil {
+		t.Error("Push nothing failed")
+	}
+
 	q = NewListQueue(data1[0])
 	if q.Start() != q.End() {
-		t.Errorf("Start/End don't work")
+		t.Error("Start/End don't work")
 	}
 	item := q.Peek()
 	if item != nil {
-		t.Errorf("Could peek at nothing")
+		t.Error("Could peek at nothing")
 	}
 	q.Push(data1...)
 	if q.Length() > 1 {
-		t.Errorf("Could push mismatched types")
+		t.Error("Could push mismatched types")
 	}
 
 	q = NewListQueue(5)
@@ -39,10 +43,10 @@ func TestQueue(t *testing.T) {
 		q.Push(v)
 	}
 	if q.Length() == 0 {
-		t.Errorf("Push failed")
+		t.Error("Push failed")
 	}
 	if q.Start() == q.End() {
-		t.Errorf("Start/End don't work")
+		t.Error("Start/End don't work")
 	}
 	item = q.Peek()
 	if item == nil {
@@ -55,19 +59,18 @@ func TestQueue(t *testing.T) {
 	q.Pop()
 	item = q.Pop()
 	if item == nil {
-		t.Errorf("Could not pop")
+		t.Error("Could not pop")
 	}
-	item = q.Pop()
-	item = q.Pop()
-	item = q.Pop()
-	item = q.Pop()
-	item = q.Pop()
+	item = q.Remove(0)
 	if item != nil {
 		t.Error("Could pop nothing")
 	}
 
 	q = NewListQueue(data3[0])
 	q.Push(data3...)
+	if q.String() != "[a,b,c,d,e]" {
+		t.Error("String not printed correctly")
+	}
 }
 
 func BenchmarkListQueue(b *testing.B) {
