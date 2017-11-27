@@ -30,9 +30,15 @@ func TestQueue(t *testing.T) {
 	if item != nil {
 		t.Error("Could peek at nothing")
 	}
+	if q.String() != "[0]" {
+		t.Error("Queue formed incorrectly")
+	}
 	q.Push(data1...)
 	if q.Length() > 1 {
 		t.Error("Could push mismatched types")
+	}
+	if q.String() != "[1]" {
+		t.Error("Queue formed incorrectly")
 	}
 
 	q = NewListQueue(5)
@@ -57,11 +63,12 @@ func TestQueue(t *testing.T) {
 		t.Error("Remove failed")
 	}
 	q.Pop()
-	item = q.Pop()
+	item = q.Remove(0)
 	if item == nil {
 		t.Error("Could not pop")
 	}
-	item = q.Remove(0)
+	item = q.Pop()
+	item = q.Pop()
 	if item != nil {
 		t.Error("Could pop nothing")
 	}
