@@ -30,7 +30,7 @@ func TestQueue(t *testing.T) {
 	if item != nil {
 		t.Error("Could peek at nothing")
 	}
-	if q.String() != "[0]" {
+	if q.String() != "[]" {
 		t.Error("Queue formed incorrectly")
 	}
 	q.Push(data1...)
