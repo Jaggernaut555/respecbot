@@ -3,6 +3,8 @@ TOKEN=$1
 BRANCH=$2
 PULLREQ=$3
 
+git clean -f
+
 echo "START DEPLOY"
 case "$BRANCH" in
 "master" )
