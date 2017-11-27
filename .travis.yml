@@ -3,6 +3,9 @@ language: go
 go:
   - 1.9
 
+git:
+  depth: 3
+
 env:
   - "PATH=/home/travis/gopath/bin:$PATH"
 
@@ -26,7 +29,7 @@ jobs:
         - chmod +x $TRAVIS_BUILD_DIR/scripts/deploy.sh
       deploy:
         provider: script
-        script: sh $TRAVIS_BUILD_DIR/scripts/deploy.sh $DEPLOY_TOKEN $TRAVIS_BRANCH $TRAVIS_PULL_REQUEST
+        script: bash $TRAVIS_BUILD_DIR/scripts/deploy.sh $DEPLOY_TOKEN $TRAVIS_BRANCH $TRAVIS_PULL_REQUEST
         skip_cleanup: true
         on:
           branch:
