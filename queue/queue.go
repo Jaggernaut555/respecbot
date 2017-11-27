@@ -23,22 +23,34 @@ func (n Node) String() string {
 }
 
 func (q ListQueue) String() string {
-	s := fmt.Sprintf("Length:%v, [", q.length)
-	for i := q.Start(); i != q.root; i = i.next {
-		s = fmt.Sprintf("%v%v,", s, i.String())
+	s := "["
+	switch q.length {
+	case 0:
+		s += "]"
+		return s
+	case 1:
+		s = fmt.Sprintf("%v%v]", s, q.Start())
+		return s
 	}
-	s = fmt.Sprintf("%v]", s)
+	s += q.Start().String()
+	for i := q.Start().next; i != q.root; i = i.next {
+		s = fmt.Sprintf("%v,%v", s, i.String())
+	}
+	s += "]"
 	return s
 }
 
+// End Get the last node in the queue
 func (q ListQueue) End() *Node {
 	return q.root.prev
 }
 
+// Start Get the first node in the queue
 func (q ListQueue) Start() *Node {
 	return q.root.next
 }
 
+// Length Length of the queue
 func (q ListQueue) Length() int {
 	return q.length
 }

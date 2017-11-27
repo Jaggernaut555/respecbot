@@ -2,7 +2,6 @@ package cards
 
 import (
 	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/Jaggernaut555/respecbot/queue"
@@ -30,15 +29,7 @@ type Deck struct {
 }
 
 func (d Deck) String() string {
-	var cards []string
-	tail := d.cards.End()
-	for v := d.cards.Pop(); v != tail; v = d.cards.Pop() {
-		cards = append(cards, v.Data.(Card).String())
-		d.cards.Push(v.Data)
-	}
-	d.cards.Push(tail.Data)
-	cards = append(cards, tail.Data.(Card).String())
-	return strings.Join(cards, ", ")
+	return d.cards.String()
 }
 
 // Package constants

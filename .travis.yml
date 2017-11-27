@@ -3,19 +3,38 @@ language: go
 go:
   - 1.9
 
+git:
+  depth: 3
+
+env:
+  - "PATH=/home/travis/gopath/bin:$PATH"
+
+
+before_install:
+  - go get github.com/mattn/goveralls
+  - go get github.com/modocache/gover
+
 stages:
   - test
-  - name: deploy
-    if: branch = master
 
 jobs:
   include:
     - stage: test
       script: 
-        - go test ./...
-    - stage: deploy
-      script:
-        - "if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then curl -H \"Content-Type: application/json\" -X POST -d '{\"token\":\"'\"$DEPLOY_TOKEN\"'\"}' http://jaggernaut.ca:9000/hooks/deploy-respecbot-webhook; fi"
+        - go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' ./... | xargs -L 1 sh -c
+        - gover
+        - goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken $COVERALLS_TOKEN
+      before_deploy:
+        - git clean -f
+        - chmod +x $TRAVIS_BUILD_DIR/scripts/deploy.sh
+      deploy:
+        provider: script
+        script: bash $TRAVIS_BUILD_DIR/scripts/deploy.sh $DEPLOY_TOKEN $TRAVIS_BRANCH $TRAVIS_PULL_REQUEST
+        skip_cleanup: true
+        on:
+          branch:
+            - master
+            - staging
 
 notifications:
   email:
